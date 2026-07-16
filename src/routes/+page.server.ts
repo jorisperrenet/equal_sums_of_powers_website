@@ -195,21 +195,20 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 		)
 		.bind(selectedCategory, pageSize, (page - 1) * pageSize)
 		.all<SubmissionRow>();
-	const searchClaims = await db
-		.prepare(
-			`SELECT c.id, c.category_id, contributor.name AS username, c.lower_radius, c.upper_radius, c.search_type,
-			 COALESCE(r.title, c.tool_text, '') AS tool_name, r.url AS tool_url,
-			 r.id AS tool_reference_id, c.comment, c.created_at
-			 FROM search_claims c
-			 JOIN contributors contributor ON contributor.id = c.contributor_id
-			 LEFT JOIN search_claim_resources cr ON cr.search_claim_id = c.id
-			 LEFT JOIN resources r ON r.id = cr.resource_id
-			 WHERE c.category_id = ?
-			 ORDER BY LENGTH(c.upper_radius) DESC, c.upper_radius DESC,
-			 LENGTH(c.lower_radius) DESC, c.lower_radius DESC, c.created_at DESC LIMIT 100`
-		)
-		.bind(selectedCategory)
-		.all<SearchClaimRow>();
+	const searchClaims = showRecent
+		? await db
+				.prepare(
+					`SELECT c.id, c.category_id, contributor.name AS username, c.lower_radius, c.upper_radius, c.search_type,
+					 COALESCE(r.title, c.tool_text, '') AS tool_name, r.url AS tool_url,
+					 r.id AS tool_reference_id, c.comment, c.created_at
+					 FROM search_claims c
+					 JOIN contributors contributor ON contributor.id = c.contributor_id
+					 LEFT JOIN search_claim_resources cr ON cr.search_claim_id = c.id
+					 LEFT JOIN resources r ON r.id = cr.resource_id
+					 ORDER BY c.created_at DESC LIMIT 100`
+				)
+				.all<SearchClaimRow>()
+		: { results: [] as SearchClaimRow[] };
 	const recentResults = showRecent
 		? await db
 				.prepare(

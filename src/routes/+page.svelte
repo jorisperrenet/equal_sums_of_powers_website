@@ -61,6 +61,10 @@
 		);
 	}
 
+	function categoryForId(id: string) {
+		return data.categories.find((category) => category.id === id);
+	}
+
 	function isNegative(value: string | number) {
 		return String(value).startsWith('-');
 	}
@@ -123,8 +127,16 @@
 					>Equal Sums of Like Powers</a
 				>
 				<div class="flex gap-4 text-sm text-[#555]">
-					<a href="#references" class="text-[#0645ad] hover:underline">References</a>
-					<a href="#contribute" class="text-[#0645ad] hover:underline">Contribute a result</a>
+					<a
+						href={data.showRecent
+							? resolve(`/?category=${data.selectedCategory}#references`)
+							: '#references'}
+						class="text-[#0645ad] hover:underline">References</a
+					>
+					<a
+						href={data.showRecent ? '#contribute' : resolve('/?view=recent#contribute')}
+						class="text-[#0645ad] hover:underline">Contribute a result</a
+					>
 				</div>
 			</div>
 		</div>
@@ -452,13 +464,17 @@
 				{:else}
 					<div class="mt-4 border border-[#aaa] bg-white px-5 py-10 text-center">
 						<p>No non-trivial identities have been recorded in this category.</p>
-						<a href="#contribute" class="mt-2 inline-block text-sm text-[#0645ad] hover:underline"
+						<a
+							href={resolve('/?view=recent#contribute')}
+							class="mt-2 inline-block text-sm text-[#0645ad] hover:underline"
 							>Contribute the first one</a
 						>
 					</div>
 				{/if}
 			</section>
+		{/if}
 
+		{#if data.showRecent}
 			<section
 				class="mt-10 border-t-2 border-[#555] pt-6"
 				aria-labelledby="search-coverage-heading"
@@ -479,6 +495,7 @@
 						<table class="w-full min-w-[950px] border-collapse text-sm">
 							<thead>
 								<tr class="border-b border-[#888] bg-[#e5e5e0] text-left">
+									<th class="w-32 border-r border-[#bbb] px-3 py-2 font-bold">Category</th>
 									<th class="w-32 border-r border-[#bbb] px-3 py-2 font-bold">Lower radius</th>
 									<th class="w-32 border-r border-[#bbb] px-3 py-2 font-bold">Upper radius</th>
 									<th class="w-28 border-r border-[#bbb] px-3 py-2 font-bold">Type</th>
@@ -490,16 +507,24 @@
 							</thead>
 							<tbody>
 								{#each data.searchClaims as claim (claim.id)}
+									{@const claimCategory = categoryForId(claim.category_id)}
 									<tr
 										class="border-b border-[#ddd] last:border-b-0 even:bg-[#f7f7f4] hover:bg-[#fffbdc]"
 									>
+										<td class="border-r border-[#ddd] px-3 py-3">
+											<a
+												href={resolve(`/?category=${claim.category_id}`)}
+												class="text-[#0645ad] hover:underline"
+												>{claimCategory ? notation(claimCategory) : claim.category_id}</a
+											>
+										</td>
 										<td class="border-r border-[#ddd] px-3 py-3 font-serif text-base">
-											{formatRadius(claim.lower_radius)} ≤ {selectedCategory?.format === 'target'
+											{formatRadius(claim.lower_radius)} ≤ {claimCategory?.format === 'target'
 												? '|xᵢ|'
 												: 'xᵢ'}
 										</td>
 										<td class="border-r border-[#ddd] px-3 py-3 font-serif text-base">
-											{selectedCategory?.format === 'target' ? '|xᵢ|' : 'xᵢ'} &lt; {formatRadius(
+											{claimCategory?.format === 'target' ? '|xᵢ|' : 'xᵢ'} &lt; {formatRadius(
 												claim.upper_radius
 											)}
 										</td>
@@ -508,7 +533,9 @@
 										<td class="border-r border-[#ddd] px-3 py-3">
 											{#if claim.tool_reference_id}
 												<a
-													href={`#reference-${claim.tool_reference_id}`}
+													href={resolve(
+														`/?category=${claim.category_id}#reference-${claim.tool_reference_id}`
+													)}
 													class="text-[#0645ad] hover:underline"
 													>[{claim.tool_reference_id}] {claim.tool_name}</a
 												>
@@ -534,7 +561,7 @@
 					</div>
 				{:else}
 					<p class="mt-4 border border-[#aaa] bg-white px-4 py-6 text-center text-sm">
-						No search coverage has been reported for this category.
+						No search coverage has been reported yet.
 					</p>
 				{/if}
 
@@ -542,7 +569,11 @@
 					<summary class="cursor-pointer bg-[#e5e5e0] px-4 py-2.5 text-sm font-bold"
 						>Report a search with no new results</summary
 					>
-					<form method="POST" action="?/claimSearch" class="border-t border-[#aaa] p-4 sm:p-5">
+					<form
+						method="POST"
+						action="?view=recent&/claimSearch"
+						class="border-t border-[#aaa] p-4 sm:p-5"
+					>
 						<p class="mb-4 text-sm leading-6 text-[#444]">
 							Please link to source code or a public tool where possible. Open methods make coverage
 							claims easier to reproduce and extend.
@@ -675,7 +706,11 @@
 				<summary class="cursor-pointer bg-[#e5e5e0] px-4 py-2.5 text-sm font-bold">
 					Contribute a result
 				</summary>
-				<form method="POST" action="?/submitIdentity" class="border-t border-[#aaa] p-4 sm:p-5">
+				<form
+					method="POST"
+					action="?view=recent&/submitIdentity"
+					class="border-t border-[#aaa] p-4 sm:p-5"
+				>
 					<p class="mb-4 text-sm leading-6 text-[#444]">
 						Choose a category and enter one equation per line, up to 50 at a time. Powers may be
 						omitted. The complete list is published only when every identity is exact and new.
@@ -784,7 +819,9 @@
 					</div>
 				</form>
 			</details>
+		{/if}
 
+		{#if !data.showRecent}
 			<section
 				id="references"
 				class="mt-12 border-t-2 border-[#555] pt-6"
@@ -819,13 +856,13 @@
 					</p>
 				{/if}
 			</section>
-
-			<datalist id="known-references">
-				{#each data.references as reference (reference.id)}
-					<option value={reference.url}>{reference.title}</option>
-				{/each}
-			</datalist>
 		{/if}
+
+		<datalist id="known-references">
+			{#each data.references as reference (reference.id)}
+				<option value={reference.url}>{reference.title}</option>
+			{/each}
+		</datalist>
 	</main>
 
 	<footer class="mt-8 border-t border-[#bbb] bg-white">
