@@ -290,7 +290,7 @@
 				</div>
 				<p class="mt-4 text-sm text-[#555]">
 					Categories with smaller <i>a</i> + <i>b</i> are listed first because they are generally more
-					difficult. The site opens on the `(7, 4, 4)` pairs problem.
+					difficult.
 				</p>
 			</section>
 		{:else}
@@ -498,7 +498,7 @@
 
 				{#if data.searchClaims.length}
 					<div class="mt-4 overflow-x-auto border border-[#aaa] bg-white">
-						<table class="w-full min-w-[950px] border-collapse text-sm">
+						<table class="w-full min-w-[1480px] border-collapse text-sm">
 							<thead>
 								<tr class="border-b border-[#888] bg-[#e5e5e0] text-left">
 									<th class="w-32 border-r border-[#bbb] px-3 py-2 font-bold">Category</th>
@@ -507,7 +507,9 @@
 									<th class="w-28 border-r border-[#bbb] px-3 py-2 font-bold">Type</th>
 									<th class="w-40 border-r border-[#bbb] px-3 py-2 font-bold">Researcher</th>
 									<th class="w-64 border-r border-[#bbb] px-3 py-2 font-bold">Tools used</th>
-									<th class="border-r border-[#bbb] px-3 py-2 font-bold">Notes</th>
+									<th class="w-[28rem] min-w-[28rem] border-r border-[#bbb] px-3 py-2 font-bold"
+										>Notes</th
+									>
 									<th class="w-32 px-3 py-2 font-bold">Date</th>
 								</tr>
 							</thead>

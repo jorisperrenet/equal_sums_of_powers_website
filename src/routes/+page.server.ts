@@ -138,6 +138,8 @@ async function getCategories(db: D1Database) {
 export const load: PageServerLoad = async ({ platform, url }) => {
 	const pageSize = 100;
 	const db = platform?.env.DB;
+	const requested = url.searchParams.get('category');
+	const showRecent = url.searchParams.get('view') === 'recent' || !requested;
 	if (!db) {
 		return {
 			categories: [],
@@ -147,7 +149,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 			references: [],
 			targetCoverage: [],
 			selectedCategory: '7-4-4',
-			showRecent: false,
+			showRecent,
 			notationFormulas,
 			page: 1,
 			pageSize,
@@ -158,8 +160,6 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	}
 
 	const categories = await getCategories(db);
-	const showRecent = url.searchParams.get('view') === 'recent';
-	const requested = url.searchParams.get('category');
 	const selectedCategory = categories.some((category) => category.id === requested)
 		? requested!
 		: categories.some((category) => category.id === '7-4-4')
