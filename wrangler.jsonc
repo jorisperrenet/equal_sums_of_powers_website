@@ -1,0 +1,21 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "manifold",
+	"compatibility_date": "2026-07-16",
+	"compatibility_flags": ["nodejs_als"],
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "manifold",
+			"database_id": "local",
+			"migrations_dir": "migrations"
+		}
+	],
+	"workers_dev": true,
+	"preview_urls": true
+}
