@@ -40,11 +40,20 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 	if (!category) return new Response('Unknown category.', { status: 404 });
 
 	const sort =
-		category.format === 'target' && url.searchParams.get('sort') !== 'date' ? 'n' : 'date';
+		url.searchParams.get('sort') === 'date'
+			? 'date'
+			: category.format === 'target'
+				? 'n'
+				: 'highest';
 	const order =
 		sort === 'n'
 			? "CAST(json_extract(s.right_terms, '$[0]') AS INTEGER) ASC, s.discovered_at ASC"
-			: 's.discovered_at DESC';
+			: sort === 'highest'
+				? `MAX(
+					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.left_terms)),
+					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.right_terms))
+				  ) ASC, s.discovered_at ASC`
+				: 's.discovered_at DESC';
 	const results = await db
 		.prepare(
 			`SELECT s.left_terms, s.right_terms, contributor.name AS username,

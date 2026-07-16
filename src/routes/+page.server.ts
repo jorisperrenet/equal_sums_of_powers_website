@@ -170,7 +170,8 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	);
 	const selectedCategoryRow = categories.find((category) => category.id === selectedCategory);
 	const requestedSort = url.searchParams.get('sort');
-	const sort = selectedCategoryRow?.format === 'target' && requestedSort !== 'date' ? 'n' : 'date';
+	const sort =
+		requestedSort === 'date' ? 'date' : selectedCategoryRow?.format === 'target' ? 'n' : 'highest';
 	const requestedPage = Number.parseInt(url.searchParams.get('page') ?? '1', 10);
 	const lastPage = Math.max(1, Math.ceil(selectedCount / pageSize));
 	const page = Number.isSafeInteger(requestedPage)
@@ -179,7 +180,12 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	const submissionOrder =
 		sort === 'n'
 			? "CAST(json_extract(s.right_terms, '$[0]') AS INTEGER) ASC, s.discovered_at ASC"
-			: 's.discovered_at DESC';
+			: sort === 'highest'
+				? `MAX(
+					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.left_terms)),
+					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.right_terms))
+				  ) ASC, s.discovered_at ASC`
+				: 's.discovered_at DESC';
 	const submissions = await db
 		.prepare(
 			`SELECT s.id, s.category_id, contributor.name AS username, s.left_terms, s.right_terms,

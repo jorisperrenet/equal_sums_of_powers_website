@@ -30,7 +30,11 @@
 			.sort((left, right) => right - left)
 			.map((exponent) => ({
 				exponent,
-				categories: data.categories.filter((category) => category.exponent === exponent)
+				categories: data.categories
+					.filter((category) => category.exponent === exponent)
+					.sort(
+						(left, right) => Number(right.format === 'target') - Number(left.format === 'target')
+					)
 			}))
 	);
 	let selectedExponentGroup = $derived(
@@ -304,24 +308,23 @@
 						</div>
 					</div>
 				</div>
-				{#if selectedCategory?.format === 'target'}
-					<nav class="mt-3 text-sm" aria-label="Result sorting">
-						<span class="font-bold">Sort by:</span>
-						<a
-							href={resolve(`/?category=${data.selectedCategory}`)}
-							class={data.sort === 'n'
-								? 'ml-2 font-bold text-[#202020]'
-								: 'ml-2 text-[#0645ad] hover:underline'}>N</a
-						>
-						<span class="px-1 text-[#888]">|</span>
-						<a
-							href={resolve(`/?category=${data.selectedCategory}&sort=date`)}
-							class={data.sort === 'date'
-								? 'font-bold text-[#202020]'
-								: 'text-[#0645ad] hover:underline'}>Date</a
-						>
-					</nav>
-				{/if}
+				<nav class="mt-3 text-sm" aria-label="Result sorting">
+					<span class="font-bold">Sort by:</span>
+					<a
+						href={resolve(`/?category=${data.selectedCategory}`)}
+						class={data.sort !== 'date'
+							? 'ml-2 font-bold text-[#202020]'
+							: 'ml-2 text-[#0645ad] hover:underline'}
+						>{selectedCategory?.format === 'target' ? 'N' : 'Highest term'}</a
+					>
+					<span class="px-1 text-[#888]">|</span>
+					<a
+						href={resolve(`/?category=${data.selectedCategory}&sort=date`)}
+						class={data.sort === 'date'
+							? 'font-bold text-[#202020]'
+							: 'text-[#0645ad] hover:underline'}>Date</a
+					>
+				</nav>
 
 				{#if selectedCategory?.format === 'target'}
 					<div class="mt-4 border border-[#aaa] bg-white p-4">
@@ -434,8 +437,11 @@
 						</table>
 					</div>
 					<p class="mt-2 text-xs text-[#666]">
-						Sorted by {data.sort === 'n' ? 'N' : 'discovery date, newest first'}. Scroll
-						horizontally on narrow screens.
+						Sorted by {data.sort === 'n'
+							? 'N'
+							: data.sort === 'highest'
+								? 'highest term, smallest first'
+								: 'discovery date, newest first'}. Scroll horizontally on narrow screens.
 					</p>
 					{#if data.selectedCount > data.pageSize}
 						<nav
