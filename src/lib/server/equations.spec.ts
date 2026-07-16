@@ -55,8 +55,8 @@ describe('parseAndVerify', () => {
 			right_count: 1,
 			format: 'target' as const
 		};
-		expect(() => parseAndVerify('(3,3;N) 5001=10+1+0', targetCategory)).toThrow(
-			/between 0 and 5000/
+		expect(() => parseAndVerify('(3,3;N) 2501=10+1+0', targetCategory)).toThrow(
+			/between 0 and 2500/
 		);
 	});
 
