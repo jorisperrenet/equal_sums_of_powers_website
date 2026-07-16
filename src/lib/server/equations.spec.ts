@@ -60,6 +60,23 @@ describe('parseAndVerify', () => {
 		);
 	});
 
+	it.each([
+		{ id: '7-7-n', exponent: 7, termCount: 7 },
+		{ id: '9-9-n', exponent: 9, termCount: 9 }
+	])('verifies signed sums in $id', ({ id, exponent, termCount }) => {
+		const targetCategory = {
+			id,
+			exponent,
+			left_count: termCount,
+			right_count: 1,
+			format: 'target' as const
+		};
+		const zeros = Array.from({ length: termCount - 2 }, () => '0').join('+');
+		const result = parseAndVerify(`(${exponent},${termCount};N) 0=1-1+${zeros}`, targetCategory);
+		expect(result.powerSum).toBe('0');
+		expect(result.left).toHaveLength(termCount);
+	});
+
 	it('verifies both residual signs in the special quintic near-miss category', () => {
 		const nearMissCategory = {
 			id: '5-4-1-pm1',
