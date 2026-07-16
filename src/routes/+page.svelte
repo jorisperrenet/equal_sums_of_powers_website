@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { resolve } from '$app/paths';
 	import { normalizeIdentity } from '$lib/identity';
 	import { TARGET_COUNT, TARGET_MAX, TARGET_MIN } from '$lib/target-range';
+	import { onMount, tick } from 'svelte';
 	import 'katex/dist/katex.min.css';
 
 	let { data, form } = $props();
@@ -20,8 +22,22 @@
 		return (form && 'equationInput' in form && form.equationInput) || '';
 	}
 
+	function initialUsername() {
+		return form?.kind === 'identity' && 'username' in form ? String(form.username) : '';
+	}
+
+	function initiallyOpenContribution() {
+		return form?.kind === 'identity';
+	}
+
+	const contributionDraftKey = 'equal-sums-contribution-draft-v1';
 	let selectedForForm = $state(initialCategory());
 	let equation = $state(initialEquation());
+	let username = $state(initialUsername());
+	let resultToolName = $state('');
+	let resultToolUrl = $state('');
+	let contributionStorageReady = $state(false);
+	let contributeOpen = $state(initiallyOpenContribution());
 	let selectedCategory = $derived(
 		data.categories.find((category) => category.id === data.selectedCategory)
 	);
@@ -44,6 +60,68 @@
 		new Map(data.targetCoverage.map((entry) => [Number(entry.n), Number(entry.solution_count)]))
 	);
 	const targetValues = Array.from({ length: TARGET_COUNT }, (_, index) => index + TARGET_MIN);
+
+	onMount(async () => {
+		try {
+			const stored = localStorage.getItem(contributionDraftKey);
+			if (stored) {
+				const draft = JSON.parse(stored) as Partial<{
+					category: string;
+					username: string;
+					equation: string;
+					resultToolName: string;
+					resultToolUrl: string;
+				}>;
+				if (draft.category && data.categories.some((category) => category.id === draft.category)) {
+					selectedForForm = draft.category;
+				}
+				if (typeof draft.username === 'string') username = draft.username;
+				if (typeof draft.equation === 'string') equation = draft.equation;
+				if (typeof draft.resultToolName === 'string') resultToolName = draft.resultToolName;
+				if (typeof draft.resultToolUrl === 'string') resultToolUrl = draft.resultToolUrl;
+			}
+		} catch {
+			// Ignore unavailable storage and malformed drafts.
+		} finally {
+			contributionStorageReady = true;
+		}
+
+		if (location.hash === '#contribute' || form?.kind === 'identity') {
+			contributeOpen = true;
+			await tick();
+			const status = document.getElementById('contribution-status');
+			(status ?? document.getElementById('contribute'))?.scrollIntoView({
+				block: status ? 'center' : 'start'
+			});
+		}
+	});
+
+	$effect(() => {
+		if (!browser || !contributionStorageReady) return;
+		try {
+			localStorage.setItem(
+				contributionDraftKey,
+				JSON.stringify({
+					category: selectedForForm,
+					username,
+					equation,
+					resultToolName,
+					resultToolUrl
+				})
+			);
+		} catch {
+			// The form remains usable when storage is blocked or full.
+		}
+	});
+
+	async function openContributionForm(event: MouseEvent) {
+		if (!data.showRecent) return;
+		event.preventDefault();
+		contributeOpen = true;
+		await tick();
+		history.pushState(null, '', '#contribute');
+		document.getElementById('contribute')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
 
 	function chooseCategory(event: Event) {
 		selectedForForm = (event.currentTarget as HTMLSelectElement).value;
@@ -139,6 +217,7 @@
 					>
 					<a
 						href={data.showRecent ? '#contribute' : resolve('/?view=recent#contribute')}
+						onclick={openContributionForm}
 						class="text-[#0645ad] hover:underline">Contribute a result</a
 					>
 				</div>
@@ -247,8 +326,24 @@
 									>
 									<td class="px-2 py-2">
 										{#if result.tool_reference_id}
-											[{result.tool_reference_id}] {result.tool_name}
-										{:else if result.tool_name}{result.tool_name}{/if}
+											<a
+												href={resolve(
+													`/?category=${result.category_id}#reference-${result.tool_reference_id}`
+												)}
+												class="text-[#0645ad] hover:underline"
+												>[{result.tool_reference_id}] {result.tool_name}</a
+											>
+										{:else if result.tool_url}
+											<a
+												href={result.tool_url}
+												target="_blank"
+												rel="noreferrer"
+												class="text-[#0645ad] hover:underline"
+												>{result.tool_name || 'Tool / code'} ↗</a
+											>
+										{:else if result.tool_name}
+											{result.tool_name}
+										{/if}
 									</td>
 								</tr>
 							{/each}
@@ -507,10 +602,8 @@
 									<th class="w-28 border-r border-[#bbb] px-3 py-2 font-bold">Type</th>
 									<th class="w-40 border-r border-[#bbb] px-3 py-2 font-bold">Researcher</th>
 									<th class="w-64 border-r border-[#bbb] px-3 py-2 font-bold">Tools used</th>
-									<th class="w-[28rem] min-w-[28rem] border-r border-[#bbb] px-3 py-2 font-bold"
-										>Notes</th
-									>
-									<th class="w-32 px-3 py-2 font-bold">Date</th>
+									<th class="w-32 border-r border-[#bbb] px-3 py-2 font-bold">Date</th>
+									<th class="w-[28rem] min-w-[28rem] px-3 py-2 font-bold">Notes</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -558,10 +651,10 @@
 												{claim.tool_name}
 											{/if}
 										</td>
-										<td class="border-r border-[#ddd] px-3 py-3 leading-5"
-											>{claim.comment || '—'}</td
+										<td class="border-r border-[#ddd] px-3 py-3 whitespace-nowrap"
+											>{formatDate(claim.created_at)}</td
 										>
-										<td class="px-3 py-3 whitespace-nowrap">{formatDate(claim.created_at)}</td>
+										<td class="px-3 py-3 leading-5">{claim.comment || '—'}</td>
 									</tr>
 								{/each}
 							</tbody>
@@ -710,13 +803,17 @@
 				</details>
 			</section>
 
-			<details id="contribute" class="mt-6 border border-[#aaa] bg-white">
+			<details
+				id="contribute"
+				bind:open={contributeOpen}
+				class="mt-6 scroll-mt-4 border border-[#aaa] bg-white"
+			>
 				<summary class="cursor-pointer bg-[#e5e5e0] px-4 py-2.5 text-sm font-bold">
 					Contribute a result
 				</summary>
 				<form
 					method="POST"
-					action="?view=recent&/submitIdentity"
+					action="?view=recent&/submitIdentity#contribute"
 					class="border-t border-[#aaa] p-4 sm:p-5"
 				>
 					<p class="mb-4 text-sm leading-6 text-[#444]">
@@ -746,7 +843,7 @@
 							Username
 							<input
 								name="username"
-								value={form?.kind === 'identity' && 'username' in form ? form.username : ''}
+								bind:value={username}
 								maxlength="32"
 								required
 								class="mt-1 block w-full border border-[#888] px-2 py-2 font-normal"
@@ -780,10 +877,13 @@
 
 					<div class="mt-4 grid gap-4 sm:grid-cols-2">
 						<label class="block text-sm font-bold"
-							>Tool or program name <span class="font-normal text-[#666]">(optional)</span>
+							>Tool or program name
 							<input
 								name="resultToolName"
+								bind:value={resultToolName}
+								minlength="2"
 								maxlength="80"
+								required
 								class="mt-1 block w-full border border-[#888] px-2 py-2 font-normal"
 							/>
 						</label>
@@ -791,6 +891,7 @@
 							>Tool or source-code link <span class="font-normal text-[#666]">(recommended)</span>
 							<input
 								name="resultToolUrl"
+								bind:value={resultToolUrl}
 								list="known-references"
 								type="url"
 								maxlength="300"
@@ -806,6 +907,7 @@
 
 					{#if form?.kind === 'identity' && form.message}
 						<p
+							id="contribution-status"
 							class={form.success
 								? 'mt-4 border border-[#7ba17b] bg-[#eef8ee] px-3 py-2 text-sm text-[#235a23]'
 								: 'mt-4 border border-[#c78f8f] bg-[#fff0f0] px-3 py-2 text-sm text-[#8a2020]'}

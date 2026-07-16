@@ -185,7 +185,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.left_terms)),
 					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.right_terms))
 				  ) ASC, s.discovered_at ASC`
-				: 's.discovered_at DESC';
+				: 'datetime(s.discovered_at) DESC, s.id DESC';
 	const submissions = await db
 		.prepare(
 			`SELECT s.id, s.category_id, contributor.name AS username, s.left_terms, s.right_terms,
@@ -231,7 +231,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 					 LEFT JOIN submission_resources str
 					   ON str.submission_id = s.id AND str.role = 'tool'
 					 LEFT JOIN resources tool ON tool.id = str.resource_id
-					 ORDER BY s.discovered_at DESC LIMIT 5`
+					 ORDER BY datetime(s.discovered_at) DESC, s.id DESC LIMIT 20`
 				)
 				.all<RecentSubmissionRow>()
 		: { results: [] as RecentSubmissionRow[] };
@@ -312,10 +312,10 @@ export const actions: Actions = {
 				equationInput
 			});
 		}
-		if (resultToolName.length > 80) {
+		if (resultToolName.length < 2 || resultToolName.length > 80) {
 			return fail(400, {
 				kind: 'identity' as const,
-				message: 'Keep the tool or program name to 80 characters.',
+				message: 'Name the tool or program in 2–80 characters.',
 				categoryId,
 				username,
 				equationInput
