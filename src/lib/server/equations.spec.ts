@@ -47,6 +47,17 @@ describe('parseAndVerify', () => {
 		expect(result.maxTerm).toBe(22403);
 	});
 
+	it('rejects signed target terms that cancel each other', () => {
+		const targetCategory = {
+			id: '5-5-n',
+			exponent: 5,
+			left_count: 5,
+			right_count: 1,
+			format: 'target' as const
+		};
+		expect(() => parseAndVerify('3=1+315-315+1+1', targetCategory)).toThrow(/cancel/);
+	});
+
 	it('limits target N to the public archive range', () => {
 		const targetCategory = {
 			id: '3-3-n',
@@ -71,9 +82,9 @@ describe('parseAndVerify', () => {
 			right_count: 1,
 			format: 'target' as const
 		};
-		const zeros = Array.from({ length: termCount - 2 }, () => '0').join('+');
-		const result = parseAndVerify(`(${exponent},${termCount};N) 0=1-1+${zeros}`, targetCategory);
-		expect(result.powerSum).toBe('0');
+		const zeros = Array.from({ length: termCount - 1 }, () => '0').join('+');
+		const result = parseAndVerify(`(${exponent},${termCount};N) 1=1+${zeros}`, targetCategory);
+		expect(result.powerSum).toBe('1');
 		expect(result.left).toHaveLength(termCount);
 	});
 

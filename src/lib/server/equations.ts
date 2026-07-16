@@ -101,6 +101,13 @@ function requirePrimitive(values: bigint[]) {
 	}
 }
 
+function requireNoCancellation(values: bigint[]) {
+	const terms = new Set(values);
+	if (values.some((value) => value !== 0n && terms.has(-value))) {
+		throw new Error('The solution contains terms x and -x that cancel each other.');
+	}
+}
+
 function formatSignedTerms(values: bigint[]) {
 	return values
 		.map((value, index) => {
@@ -150,6 +157,7 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 			throw new Error(`This category needs exactly ${category.left_count} signed terms.`);
 		}
 		requirePrimitive(signedTerms);
+		requireNoCancellation(signedTerms);
 		const calculated = signedTerms.reduce(
 			(total, value) => total + value ** BigInt(category.exponent),
 			0n

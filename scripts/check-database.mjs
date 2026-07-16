@@ -118,6 +118,10 @@ for (const row of rows) {
 			fail(row, `expected ${row.left_count} signed terms and one target`);
 		}
 		if (right[0] < 0n || right[0] > 2500n) fail(row, 'target N is outside [0, 2500]');
+		const terms = new Set(left);
+		if (left.some((value) => value !== 0n && terms.has(-value))) {
+			fail(row, 'signed target contains terms x and -x that cancel each other');
+		}
 		bases = left;
 		leftSum = left.reduce((sum, value) => sum + value ** exponent, 0n);
 		rightSum = right[0];

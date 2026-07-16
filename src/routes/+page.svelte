@@ -59,6 +59,9 @@
 	let targetCoverage = $derived(
 		new Map(data.targetCoverage.map((entry) => [Number(entry.n), Number(entry.solution_count)]))
 	);
+	let referenceNumbers = $derived(
+		new Map(data.references.map((reference, index) => [reference.id, index + 1]))
+	);
 	const targetValues = Array.from({ length: TARGET_COUNT }, (_, index) => index + TARGET_MIN);
 
 	onMount(async () => {
@@ -166,6 +169,10 @@
 		if (value % 10 === 2) return `${value}nd`;
 		if (value % 10 === 3) return `${value}rd`;
 		return `${value}th`;
+	}
+
+	function referenceNumber(id: number) {
+		return referenceNumbers.get(id) ?? id;
 	}
 
 	function structuralExample(category: (typeof data.categories)[number]) {
@@ -331,7 +338,7 @@
 													`/?category=${result.category_id}#reference-${result.tool_reference_id}`
 												)}
 												class="text-[#0645ad] hover:underline"
-												>[{result.tool_reference_id}] {result.tool_name}</a
+												>[{referenceNumber(result.tool_reference_id)}] {result.tool_name}</a
 											>
 										{:else if result.tool_url}
 											<a
@@ -512,7 +519,7 @@
 												<a
 													href={`#reference-${submission.tool_reference_id}`}
 													class="text-[#0645ad] hover:underline"
-													>[{submission.tool_reference_id}] {submission.tool_name}</a
+													>[{referenceNumber(submission.tool_reference_id)}] {submission.tool_name}</a
 												>
 											{:else if submission.tool_url}
 												<a
@@ -638,7 +645,7 @@
 														`/?category=${claim.category_id}#reference-${claim.tool_reference_id}`
 													)}
 													class="text-[#0645ad] hover:underline"
-													>[{claim.tool_reference_id}] {claim.tool_name}</a
+													>[{referenceNumber(claim.tool_reference_id)}] {claim.tool_name}</a
 												>
 											{:else if claim.tool_url}
 												<a
@@ -944,12 +951,12 @@
 				</p>
 				{#if data.references.length}
 					<ol class="mt-4 border border-[#aaa] bg-white text-sm">
-						{#each data.references as reference (reference.id)}
+						{#each data.references as reference, index (reference.id)}
 							<li
 								id={`reference-${reference.id}`}
 								class="grid gap-1 border-b border-[#ddd] px-3 py-2 last:border-b-0 sm:grid-cols-[3rem_1fr_auto] sm:gap-3"
 							>
-								<span class="font-bold">[{reference.id}]</span>
+								<span class="font-bold">[{index + 1}]</span>
 								<a
 									href={reference.url}
 									target="_blank"
