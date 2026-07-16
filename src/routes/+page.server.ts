@@ -362,10 +362,10 @@ export const actions: Actions = {
 				equationInput
 			});
 		}
-		if (equationLines.length > 50) {
+		if (equationLines.length > 100) {
 			return fail(400, {
 				kind: 'identity' as const,
-				message: 'Submit at most 50 equations at a time.',
+				message: 'Submit at most 100 equations at a time.',
 				categoryId,
 				username,
 				equationInput
@@ -385,37 +385,40 @@ export const actions: Actions = {
 				equationInput
 			});
 
-		const verifiedResults = [];
+		const verifiedResults: Array<{
+			left: bigint[];
+			right: bigint[];
+			serializedLeft: string;
+			serializedRight: string;
+			key: string;
+		}> = [];
+		const seenKeys = new Set<string>();
+		let skippedCount = 0;
+		let firstSkippedReason = '';
 		for (const [index, line] of equationLines.entries()) {
 			try {
-				verifiedResults.push(parseAndVerify(line, category));
+				const verified = parseAndVerify(line, category);
+				const serializedLeft = serializeTerms(verified.left);
+				const serializedRight = serializeTerms(verified.right);
+				const key = identityKey(serializedLeft, serializedRight, category);
+				if (seenKeys.has(key)) {
+					skippedCount++;
+					firstSkippedReason ||= `Line ${index + 1}: the identity occurs more than once in this paste.`;
+					continue;
+				}
+				seenKeys.add(key);
+				verifiedResults.push({
+					...verified,
+					serializedLeft,
+					serializedRight,
+					key
+				});
 			} catch (error) {
 				const reason =
 					error instanceof Error ? error.message : 'That equation could not be verified.';
-				return fail(400, {
-					kind: 'identity' as const,
-					message: `Line ${index + 1}: ${reason}`,
-					categoryId,
-					username,
-					equationInput
-				});
+				skippedCount++;
+				firstSkippedReason ||= `Line ${index + 1}: ${reason}`;
 			}
-		}
-		const serializedResults = verifiedResults.map((result) => ({
-			left: serializeTerms(result.left),
-			right: serializeTerms(result.right)
-		}));
-		if (
-			new Set(serializedResults.map((result) => `${result.left}=${result.right}`)).size !==
-			serializedResults.length
-		) {
-			return fail(400, {
-				kind: 'identity' as const,
-				message: 'The submitted list contains the same identity more than once.',
-				categoryId,
-				username,
-				equationInput
-			});
 		}
 		const existing = await db
 			.prepare('SELECT left_terms, right_terms FROM submissions WHERE category_id = ?')
@@ -424,14 +427,16 @@ export const actions: Actions = {
 		const existingKeys = new Set(
 			existing.results.map((result) => identityKey(result.left_terms, result.right_terms, category))
 		);
-		if (
-			serializedResults.some((result) =>
-				existingKeys.has(identityKey(result.left, result.right, category))
-			)
-		) {
+		const newResults = verifiedResults.filter((result) => {
+			if (!existingKeys.has(result.key)) return true;
+			skippedCount++;
+			firstSkippedReason ||= 'At least one result is already on the leaderboard.';
+			return false;
+		});
+		if (newResults.length === 0) {
 			return fail(409, {
 				kind: 'identity' as const,
-				message: 'At least one result in that list is already on the leaderboard.',
+				message: `No results were added; ${equationLines.length === 1 ? 'the line was' : `all ${equationLines.length} lines were`} invalid or duplicated. ${firstSkippedReason}`,
 				categoryId,
 				username,
 				equationInput
@@ -439,20 +444,20 @@ export const actions: Actions = {
 		}
 
 		try {
-			const submissionIds = verifiedResults.map(() => crypto.randomUUID());
+			const submissionIds = newResults.map(() => crypto.randomUUID());
 			const statement = db.prepare(
-				`INSERT INTO submissions
+				`INSERT OR IGNORE INTO submissions
 					 (id, category_id, contributor_id, left_terms, right_terms, tool_text)
 					 SELECT ?, ?, id, ?, ?, ? FROM contributors WHERE name = ?`
 			);
 			const statements = [
 				db.prepare('INSERT OR IGNORE INTO contributors (name) VALUES (?)').bind(username),
-				...verifiedResults.map((verified, index) =>
+				...newResults.map((verified, index) =>
 					statement.bind(
 						submissionIds[index],
 						category.id,
-						serializedResults[index].left,
-						serializedResults[index].right,
+						verified.serializedLeft,
+						verified.serializedRight,
 						resultToolUrl ? null : resultToolName || null,
 						username
 					)
@@ -468,8 +473,10 @@ export const actions: Actions = {
 					statements.push(
 						db
 							.prepare(
-								`INSERT INTO submission_resources (submission_id, resource_id, role)
-								 SELECT ?, id, 'tool' FROM resources WHERE url = ?`
+								`INSERT OR IGNORE INTO submission_resources (submission_id, resource_id, role)
+								 SELECT submissions.id, resources.id, 'tool'
+								 FROM submissions, resources
+								 WHERE submissions.id = ? AND resources.url = ?`
 							)
 							.bind(submissionId, resultToolUrl)
 					);
@@ -492,7 +499,7 @@ export const actions: Actions = {
 		return {
 			kind: 'identity' as const,
 			success: true,
-			message: `${verifiedResults.length} ${verifiedResults.length === 1 ? 'result' : 'results'} verified exactly and added to the public leaderboard.`,
+			message: `${newResults.length} ${newResults.length === 1 ? 'result' : 'results'} verified exactly and added to the public leaderboard.${skippedCount ? ` ${skippedCount} ${skippedCount === 1 ? 'line was' : 'lines were'} skipped because they were invalid or duplicated.` : ''}`,
 			categoryId,
 			username: '',
 			equationInput: ''

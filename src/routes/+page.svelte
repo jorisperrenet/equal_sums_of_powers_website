@@ -817,8 +817,9 @@
 					class="border-t border-[#aaa] p-4 sm:p-5"
 				>
 					<p class="mb-4 text-sm leading-6 text-[#444]">
-						Choose a category and enter one equation per line, up to 50 at a time. Powers may be
-						omitted. The complete list is published only when every identity is exact and new.
+						Choose a category and enter one equation per line, up to 100 at a time. Powers may be
+						omitted. Invalid, non-primitive, and duplicate identities are skipped; every exact new
+						identity is published.
 					</p>
 					<div class="grid gap-4 md:grid-cols-[220px_180px_1fr]">
 						<label class="block text-sm font-bold">
@@ -856,7 +857,7 @@
 								name="equation"
 								bind:value={equation}
 								required
-								maxlength="25049"
+								maxlength="50099"
 								rows="5"
 								spellcheck="false"
 								class="mt-1 block w-full border border-[#888] px-2 py-2 font-mono font-normal"
