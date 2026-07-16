@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { normalizeIdentity } from '$lib/identity';
+	import { TARGET_COUNT, TARGET_MAX, TARGET_MIN } from '$lib/target-range';
 	import 'katex/dist/katex.min.css';
 
 	let { data, form } = $props();
@@ -38,7 +39,7 @@
 	let targetCoverage = $derived(
 		new Map(data.targetCoverage.map((entry) => [Number(entry.n), Number(entry.solution_count)]))
 	);
-	const targetValues = Array.from({ length: 2001 }, (_, index) => index - 1000);
+	const targetValues = Array.from({ length: TARGET_COUNT }, (_, index) => index + TARGET_MIN);
 
 	function chooseCategory(event: Event) {
 		selectedForForm = (event.currentTarget as HTMLSelectElement).value;
@@ -313,8 +314,9 @@
 				{#if selectedCategory?.format === 'target'}
 					<div class="mt-4 border border-[#aaa] bg-white p-4">
 						<p class="text-sm">
-							The integer target is restricted to <strong>−1000 ≤ N ≤ 1000</strong>.
-							{data.targetCoverage.length} of 2001 target values currently have at least one result.
+							The integer target is restricted to <strong>{TARGET_MIN} ≤ N ≤ {TARGET_MAX}</strong>.
+							{data.targetCoverage.length} of {TARGET_COUNT} target values currently have at least one
+							result.
 						</p>
 						<details class="mt-3">
 							<summary class="cursor-pointer text-sm font-bold text-[#0645ad] hover:underline"
@@ -827,8 +829,16 @@
 	</main>
 
 	<footer class="mt-8 border-t border-[#bbb] bg-white">
-		<div class="mx-auto max-w-6xl px-4 py-5 text-xs text-[#666] sm:px-6">
-			Equal Sums of Like Powers — community-maintained tables of verified identities.
+		<div
+			class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-[#666] sm:px-6"
+		>
+			<span>Equal Sums of Like Powers — community-maintained tables of verified identities.</span>
+			<a
+				href="https://github.com/jorisperrenet/equal_sums_of_powers_website"
+				target="_blank"
+				rel="noreferrer"
+				class="text-[#0645ad] hover:underline focus:underline">Source code on GitHub ↗</a
+			>
 		</div>
 	</footer>
 </div>

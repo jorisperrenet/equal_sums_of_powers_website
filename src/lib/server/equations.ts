@@ -1,3 +1,5 @@
+import { TARGET_MAX, TARGET_MIN } from '$lib/target-range';
+
 export type CategoryShape = {
 	id: string;
 	exponent: number;
@@ -140,8 +142,8 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 			throw new Error('Put one integer N on one side and the signed power sum on the other.');
 		}
 		const target = BigInt((leftIsTarget ? parts[0] : parts[1]).trim());
-		if (target < -1000n || target > 1000n) {
-			throw new Error('N must be between -1000 and 1000.');
+		if (target < BigInt(TARGET_MIN) || target > BigInt(TARGET_MAX)) {
+			throw new Error(`N must be between ${TARGET_MIN} and ${TARGET_MAX}.`);
 		}
 		const signedTerms = parseSignedSide(leftIsTarget ? parts[1] : parts[0], category.exponent);
 		if (signedTerms.length !== category.left_count) {

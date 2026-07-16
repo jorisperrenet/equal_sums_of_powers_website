@@ -1,8 +1,7 @@
 # Equal Sums of Like Powers
 
-AI-powered website that functions as a record page.
-
-A public, machine-verified archive built with SvelteKit, Tailwind CSS, Cloudflare Workers, and D1.
+A public, machine-verified archive built with SvelteKit, Tailwind CSS, Cloudflare Workers,
+and D1. The production site is available at <https://sums.jorisperrenet.com>.
 
 ## Local development
 
@@ -20,15 +19,49 @@ Inspect the local database with:
 npx wrangler d1 execute manifold --local --command "SELECT * FROM submissions LIMIT 20"
 ```
 
-## Deploy to Cloudflare
+Local development uses a database under `.wrangler/`; it never connects to or changes the
+production database.
 
-Create the free D1 database and replace the placeholder `database_id` in `wrangler.jsonc`:
+## Contributing
+
+Create a branch, make and test the change locally, and open a pull request.
+
+## Production deployment
+
+The `main` branch deploys to the existing `manifold` Cloudflare Worker through Cloudflare's GitHub
+integration. That Worker is bound to the shared production D1 database as `DB`, using the binding
+declared in `wrangler.jsonc`.
+
+The production application does not need to poll or copy the database. Every page request queries
+the shared remote D1 database directly through `env.DB`, and every accepted public submission is
+written to it immediately. Production data lives in D1 rather than in the Git repository.
+
+Deploying a new version of the Worker updates the application code and static assets only. It does
+not recreate, replace, or clear D1, so existing public submissions remain available after every
+deployment.
+
+To deploy manually:
 
 ```sh
-npx wrangler login
-npx wrangler d1 create manifold
-npm run db:migrate:remote
 npm run deploy
+```
+
+## Database migrations
+
+Create and verify schema migrations locally first:
+
+```sh
+npx wrangler d1 migrations create manifold descriptive_name
+npm run db:migrate:local
+npm run check:database
+```
+
+Use backward-compatible migrations so the currently deployed Worker continues to work. Apply the
+migration to production before merging code that depends on the new schema:
+
+```sh
+npm run db:migrate:remote
+npm run check:database -- --remote
 ```
 
 Valid public submissions are recomputed with exact `BigInt` arithmetic, checked for primitivity, deduplicated, and inserted automatically.

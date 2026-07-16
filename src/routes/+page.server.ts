@@ -2,6 +2,7 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { normalizeIdentity } from '$lib/identity';
 import { parseAndVerify, type CategoryShape } from '$lib/server/equations';
+import { TARGET_MAX, TARGET_MIN } from '$lib/target-range';
 import type { D1Database } from '@cloudflare/workers-types';
 import katex from 'katex';
 
@@ -18,7 +19,9 @@ const notationFormulas = {
 	targetEquation: katex.renderToString('x_1^n+\\cdots+x_k^n=N', {
 		displayMode: true
 	}),
-	targetRange: katex.renderToString('-1000\\le N\\le1000', { displayMode: true }),
+	targetRange: katex.renderToString(`${TARGET_MIN}\\le N\\le${TARGET_MAX}`, {
+		displayMode: true
+	}),
 	unsignedSearchBounds: katex.renderToString('0\\le x_i<B', { displayMode: true }),
 	signedSearchBounds: katex.renderToString('0\\le |x_i|<B', { displayMode: true })
 };
