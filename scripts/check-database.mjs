@@ -112,6 +112,7 @@ for (const row of rows) {
 	let bases;
 	let leftSum;
 	let rightSum;
+	let requiresPrimitive = true;
 	const exponent = BigInt(row.exponent);
 	if (row.format === 'target') {
 		if (left.length !== row.left_count || right.length !== 1) {
@@ -125,6 +126,7 @@ for (const row of rows) {
 		bases = left;
 		leftSum = left.reduce((sum, value) => sum + value ** exponent, 0n);
 		rightSum = right[0];
+		requiresPrimitive = right[0] === 0n;
 	} else if (row.format === 'near_miss') {
 		if (left.length !== row.left_count || right.length !== row.right_count + 1) {
 			fail(row, `expected ${row.left_count} terms, ${row.right_count} terms, and a residual`);
@@ -150,7 +152,9 @@ for (const row of rows) {
 	}
 
 	if (leftSum !== rightSum) fail(row, `power sums differ by ${absolute(leftSum - rightSum)}`);
-	if (bases.reduce(gcd, 0n) !== 1n) fail(row, 'identity is not primitive');
+	if (requiresPrimitive && bases.reduce(gcd, 0n) !== 1n) {
+		fail(row, 'identity is not primitive');
+	}
 	const key = `${row.category_id}:${normalizedKey(row, [...left], [...right])}`;
 	if (identities.has(key)) fail(row, `duplicates ${identities.get(key)}`);
 	else identities.set(key, row.id);

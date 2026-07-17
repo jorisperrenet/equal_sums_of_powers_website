@@ -363,8 +363,10 @@
 				<h2 id="notation-heading" class="font-serif text-2xl font-bold">Notation</h2>
 				<p class="mt-3 text-sm leading-6 text-[#333]">
 					The archive uses compact labels for different equal-sum and near-miss problems. Every
-					published identity is checked with exact integer arithmetic and must be primitive: the
-					bases have no common factor greater than 1.
+					published identity is checked with exact integer arithmetic. Identities must be primitive,
+					meaning their bases have no common factor greater than 1, except in the (<i>n</i>,
+					<i>k</i>; <i>N</i>) case when <i>N</i> is nonzero. When <i>N</i> = 0, the primitive condition
+					still applies.
 				</p>
 				<div class="mt-5 grid gap-5 md:grid-cols-3">
 					<div>
@@ -825,8 +827,9 @@
 				>
 					<p class="mb-4 text-sm leading-6 text-[#444]">
 						Choose a category and enter one equation per line, up to 100 at a time. Powers may be
-						omitted. Invalid, non-primitive, and duplicate identities are skipped; every exact new
-						identity is published.
+						omitted. Invalid, disallowed non-primitive, and duplicate identities are skipped; every
+						exact new identity is published. Non-primitive identities are allowed only for (<i>n</i
+						>, <i>k</i>; <i>N</i>) with <i>N</i> ≠ 0.
 					</p>
 					<div class="grid gap-4 md:grid-cols-[220px_180px_1fr]">
 						<label class="block text-sm font-bold">

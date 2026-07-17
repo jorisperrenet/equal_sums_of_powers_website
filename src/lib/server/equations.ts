@@ -156,7 +156,9 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 		if (signedTerms.length !== category.left_count) {
 			throw new Error(`This category needs exactly ${category.left_count} signed terms.`);
 		}
-		requirePrimitive(signedTerms);
+		// A nonzero fixed target prevents scaling one solution into infinitely many.
+		// For N = 0, retain the primitive condition because scaling preserves the target.
+		if (target === 0n) requirePrimitive(signedTerms);
 		requireNoCancellation(signedTerms);
 		const calculated = signedTerms.reduce(
 			(total, value) => total + value ** BigInt(category.exponent),

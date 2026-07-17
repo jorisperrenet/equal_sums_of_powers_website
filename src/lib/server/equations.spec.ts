@@ -47,6 +47,29 @@ describe('parseAndVerify', () => {
 		expect(result.maxTerm).toBe(22403);
 	});
 
+	it('accepts a non-primitive signed sum for a nonzero integer target', () => {
+		const targetCategory = {
+			id: '3-3-n',
+			exponent: 3,
+			left_count: 3,
+			right_count: 1,
+			format: 'target' as const
+		};
+		const result = parseAndVerify('(3,3;N) 16=2+2+0', targetCategory);
+		expect(result.equation).toBe('2 + 2 + 0 = 16');
+	});
+
+	it('still rejects a non-primitive signed sum when the target is zero', () => {
+		const targetCategory = {
+			id: '3-4-n',
+			exponent: 3,
+			left_count: 4,
+			right_count: 1,
+			format: 'target' as const
+		};
+		expect(() => parseAndVerify('(3,4;N) 0=6+8+10-12', targetCategory)).toThrow(/not primitive/);
+	});
+
 	it('rejects signed target terms that cancel each other', () => {
 		const targetCategory = {
 			id: '5-5-n',
