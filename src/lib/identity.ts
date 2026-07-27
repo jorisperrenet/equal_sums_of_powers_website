@@ -30,6 +30,7 @@ export function normalizeIdentity(leftJson: string, rightJson: string, shape: Id
 			const absoluteB = b < 0n ? -b : b;
 			return absoluteA === absoluteB ? descending(a, b) : descending(absoluteA, absoluteB);
 		});
+		if (right[0] === 0n && left[0] < 0n) left = left.map((term) => -term);
 		return { left: left.map(String), right: right.map(String), residual: null };
 	}
 

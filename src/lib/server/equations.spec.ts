@@ -70,6 +70,19 @@ describe('parseAndVerify', () => {
 		expect(() => parseAndVerify('(3,4;N) 0=6+8+10-12', targetCategory)).toThrow(/not primitive/);
 	});
 
+	it('automatically makes the greatest-absolute-value term positive for a zero target', () => {
+		const targetCategory = {
+			id: '5-5-n',
+			exponent: 5,
+			left_count: 5,
+			right_count: 1,
+			format: 'target' as const
+		};
+		const result = parseAndVerify('0=-144+133+110+84+27', targetCategory);
+		expect(result.left).toEqual([144n, -133n, -110n, -84n, -27n]);
+		expect(result.equation).toBe('144 - 133 - 110 - 84 - 27 = 0');
+	});
+
 	it('rejects signed target terms that cancel each other', () => {
 		const targetCategory = {
 			id: '5-5-n',

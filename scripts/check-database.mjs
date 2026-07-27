@@ -86,6 +86,7 @@ function normalizedKey(row, left, right) {
 			const absoluteB = absolute(b);
 			return absoluteA === absoluteB ? descending(a, b) : descending(absoluteA, absoluteB);
 		});
+		if (right[0] === 0n && left[0] < 0n) left = left.map((value) => -value);
 		return `${left.join(',')}=${right.join(',')}`;
 	}
 	left.sort(descending);
@@ -122,6 +123,13 @@ for (const row of rows) {
 		const terms = new Set(left);
 		if (left.some((value) => value !== 0n && terms.has(-value))) {
 			fail(row, 'signed target contains terms x and -x that cancel each other');
+		}
+		if (
+			right[0] === 0n &&
+			left.reduce((largest, value) => (absolute(value) > absolute(largest) ? value : largest), 0n) <
+				0n
+		) {
+			fail(row, 'zero target has a negative greatest-absolute-value term');
 		}
 		bases = left;
 		leftSum = left.reduce((sum, value) => sum + value ** exponent, 0n);

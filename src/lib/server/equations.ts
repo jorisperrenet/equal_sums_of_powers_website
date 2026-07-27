@@ -172,7 +172,10 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 			(current, value) => (absolute(value) > current ? absolute(value) : current),
 			0n
 		);
-		const normalizedTerms = sortedSigned(signedTerms);
+		let normalizedTerms = sortedSigned(signedTerms);
+		if (target === 0n && normalizedTerms[0] < 0n) {
+			normalizedTerms = normalizedTerms.map((term) => -term);
+		}
 		return {
 			left: normalizedTerms,
 			right: [target],
