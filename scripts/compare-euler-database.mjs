@@ -58,11 +58,13 @@ function parseReference(text, categories) {
 		);
 		if (!match) continue;
 		const tuple = `${match[1]}-${match[2]}-${match[3]}`;
-		const category = categories.get(tuple);
-		if (!category) continue;
+		const matchCategory = categories.get(tuple);
+		if (!matchCategory) continue;
+		const { category, reversed } = matchCategory;
 		try {
-			const left = parseTerms(match[4]);
-			const right = parseTerms(match[5]);
+			let left = parseTerms(match[4]);
+			let right = parseTerms(match[5]);
+			if (reversed) [left, right] = [right, left];
 			if (left.length !== category.leftCount || right.length !== category.rightCount) {
 				throw new Error(`expanded term counts are ${left.length} and ${right.length}`);
 			}
@@ -111,12 +113,16 @@ try {
 	for (const row of categoryRows.trim().split('\n')) {
 		if (!row) continue;
 		const [id, exponent, leftCount, rightCount] = row.split('|');
-		categories.set(`${exponent}-${leftCount}-${rightCount}`, {
+		const category = {
 			id,
 			exponent: Number(exponent),
 			leftCount: Number(leftCount),
 			rightCount: Number(rightCount)
-		});
+		};
+		categories.set(`${exponent}-${leftCount}-${rightCount}`, { category, reversed: false });
+		if (leftCount !== rightCount) {
+			categories.set(`${exponent}-${rightCount}-${leftCount}`, { category, reversed: true });
+		}
 	}
 
 	const existing = new Set();
@@ -149,10 +155,14 @@ try {
 
 	const grouped = Map.groupBy(missing, (entry) => entry.categoryId);
 	console.log(
-		`Compared ${seenReference.size} reference identities in ${categories.size} current equality categories.`
+		`Compared ${seenReference.size} reference identities in ${
+			new Set([...categories.values()].map(({ category }) => category.id)).size
+		} current equality categories.`
 	);
 	console.log(`Missing from the public database: ${missing.length}`);
-	for (const category of categories.values()) {
+	for (const category of new Map(
+		[...categories.values()].map(({ category }) => [category.id, category])
+	).values()) {
 		const categoryMissing = grouped.get(category.id) ?? [];
 		if (!categoryMissing.length) continue;
 		console.log(`\n${category.id} (${categoryMissing.length})`);
