@@ -1,4 +1,4 @@
-import { fail } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { normalizeIdentity } from '$lib/identity';
 import { parseAndVerify, type CategoryShape } from '$lib/server/equations';
@@ -79,6 +79,66 @@ type TargetCoverageRow = {
 	solution_count: number;
 };
 
+function categoryPath(category: Pick<CategoryRow, 'id' | 'exponent'>) {
+	return `/${category.exponent}${category.exponent === 1 ? 'st' : category.exponent === 2 ? 'nd' : category.exponent === 3 ? 'rd' : 'th'}-powers/${category.id}/`;
+}
+
+function powerName(exponent: number, capitalized = true) {
+	const names: Record<number, string> = {
+		1: 'first',
+		2: 'second',
+		3: 'third',
+		4: 'fourth',
+		5: 'fifth',
+		6: 'sixth',
+		7: 'seventh',
+		8: 'eighth',
+		9: 'ninth',
+		10: 'tenth'
+	};
+	const name =
+		names[exponent] ??
+		`${exponent}${exponent === 1 ? 'st' : exponent === 2 ? 'nd' : exponent === 3 ? 'rd' : 'th'}`;
+	return capitalized ? `${name[0].toUpperCase()}${name.slice(1)}` : name;
+}
+
+function categoryHeading(category: CategoryRow) {
+	const featured: Record<string, string> = {
+		'7-4-4': 'Equal Sums of Seventh Powers (4 vs 4)',
+		'5-3-2-pm1': 'Fifth-Power Near Misses (3 vs 2, ±1)',
+		'5-5-n': 'Fifth-Power Integer Targets'
+	};
+	if (featured[category.id]) return featured[category.id];
+	const power = powerName(category.exponent);
+	if (category.format === 'target') return `${power}-Power Integer Targets`;
+	if (category.format === 'near_miss')
+		return `${power}-Power Near Misses (${category.left_count} vs ${category.right_count}, ±1)`;
+	return `Equal Sums of ${power} Powers (${category.left_count} vs ${category.right_count})`;
+}
+
+function categoryDescription(
+	category: CategoryRow,
+	page: number,
+	pageSize: number,
+	selectedCount: number
+) {
+	const start = (page - 1) * pageSize + 1;
+	const end = Math.min(page * pageSize, selectedCount);
+	const amount =
+		page === 1 && end === selectedCount
+			? `${selectedCount} machine-verified`
+			: `machine-verified identities ${start}–${end} of ${selectedCount}`;
+	const details = 'including every integer term, contributor, discovery date, and search method';
+	const power = powerName(category.exponent, false);
+	if (category.format === 'target') {
+		return `Browse ${amount} ${power}-power integer-target solutions, ${details}.`;
+	}
+	if (category.format === 'near_miss') {
+		return `Browse ${amount} ${power}-power near misses (${category.left_count} vs ${category.right_count}, ±1), ${details}.`;
+	}
+	return `Browse ${amount} equal sums of ${power} powers (${category.left_count} vs ${category.right_count}), ${details}.`;
+}
+
 function validateUsername(username: string) {
 	if (username.length < 2 || username.length > 32) {
 		return 'Use a username between 2 and 32 characters.';
@@ -138,8 +198,12 @@ async function getCategories(db: D1Database) {
 export const load: PageServerLoad = async ({ platform, url }) => {
 	const pageSize = 100;
 	const db = platform?.env.DB;
-	const requested = url.searchParams.get('category');
+	const legacyCategory = url.searchParams.get('category');
+	const pathMatch = url.pathname.match(/^\/(?:\d+(?:st|nd|rd|th)-powers)\/([^/]+)\/?$/);
+	if (url.pathname !== '/' && !pathMatch) error(404, 'Unknown power-sum category');
+	const requested = pathMatch?.[1] ?? legacyCategory;
 	const showRecent = url.searchParams.get('view') === 'recent' || !requested;
+	if (url.pathname === '/' && url.searchParams.get('view') === 'recent') redirect(308, '/');
 	if (!db) {
 		return {
 			categories: [],
@@ -155,11 +219,22 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 			pageSize,
 			sort: 'date' as const,
 			selectedCount: 0,
-			total: 0
+			total: 0,
+			heading: '',
+			metaTitle: 'Equal Sums of Powers — Verified Identities & Search Results',
+			metaDescription:
+				'Explore a machine-verified archive of equal sums of like powers, near misses, and integer-target solutions with complete equations, methods, and search bounds.',
+			canonicalPath: '/',
+			canonicalUrl: 'https://powersums.jorisperrenet.com/',
+			categoryPaths: {} as Record<string, string>,
+			noindex: false
 		};
 	}
 
 	const categories = await getCategories(db);
+	if (requested && !categories.some((category) => category.id === requested)) {
+		error(404, 'Unknown power-sum category');
+	}
 	const selectedCategory = categories.some((category) => category.id === requested)
 		? requested!
 		: categories.some((category) => category.id === '7-4-4')
@@ -177,14 +252,33 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	const page = Number.isSafeInteger(requestedPage)
 		? Math.min(Math.max(requestedPage, 1), lastPage)
 		: 1;
+	if (selectedCategoryRow && requested) {
+		const canonicalPath = categoryPath(selectedCategoryRow);
+		const normalized = new URLSearchParams();
+		if (requestedSort === 'date') normalized.set('sort', 'date');
+		if (page > 1) normalized.set('page', String(page));
+		const normalizedUrl = `${canonicalPath}${normalized.size ? `?${normalized}` : ''}`;
+		const invalidSort = requestedSort !== null && requestedSort !== 'date';
+		const invalidPage =
+			url.searchParams.has('page') && (url.searchParams.get('page') !== String(page) || page === 1);
+		if (
+			legacyCategory ||
+			url.pathname !== canonicalPath ||
+			invalidSort ||
+			invalidPage ||
+			url.searchParams.has('view')
+		) {
+			redirect(308, normalizedUrl);
+		}
+	}
 	const submissionOrder =
 		sort === 'n'
-			? "CAST(json_extract(s.right_terms, '$[0]') AS INTEGER) ASC, s.discovered_at ASC"
+			? "CAST(json_extract(s.right_terms, '$[0]') AS INTEGER) ASC, s.discovered_at ASC, s.id ASC"
 			: sort === 'highest'
 				? `MAX(
 					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.left_terms)),
 					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.right_terms))
-				  ) ASC, s.discovered_at ASC`
+				  ) ASC, s.discovered_at ASC, s.id ASC`
 				: 'datetime(s.discovered_at) DESC, s.id DESC';
 	const submissions = await db
 		.prepare(
@@ -256,6 +350,19 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 					.all<TargetCoverageRow>()
 			: { results: [] as TargetCoverageRow[] };
 	const total = categories.reduce((sum, category) => sum + Number(category.submission_count), 0);
+	const heading = selectedCategoryRow ? categoryHeading(selectedCategoryRow) : '';
+	const canonicalPath =
+		showRecent || !selectedCategoryRow ? '/' : categoryPath(selectedCategoryRow);
+	const canonicalUrl = `https://powersums.jorisperrenet.com${canonicalPath}${page > 1 && requestedSort !== 'date' ? `?page=${page}` : ''}`;
+	const pageSuffix = page > 1 ? ` — Page ${page}` : '';
+	const metaTitle =
+		!showRecent && selectedCategoryRow
+			? `${heading} — Verified Results${pageSuffix}`
+			: 'Equal Sums of Powers — Verified Identities & Search Results';
+	const metaDescription =
+		!showRecent && selectedCategoryRow
+			? categoryDescription(selectedCategoryRow, page, pageSize, selectedCount)
+			: `Explore ${total} machine-verified equal sums of like powers, near misses, and integer-target solutions with complete equations, methods, and documented search bounds.`;
 
 	return {
 		categories,
@@ -271,7 +378,16 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 		page,
 		pageSize,
 		selectedCount,
-		total
+		total,
+		heading,
+		metaTitle,
+		metaDescription,
+		canonicalPath,
+		canonicalUrl,
+		categoryPaths: Object.fromEntries(
+			categories.map((category) => [category.id, categoryPath(category)])
+		),
+		noindex: requestedSort === 'date'
 	};
 };
 
