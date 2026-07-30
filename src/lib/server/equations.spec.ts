@@ -28,6 +28,27 @@ describe('parseAndVerify', () => {
 		expect(() => parseAndVerify('1+2+3+4=4+3+2+1', category)).toThrow(/trivial identity/);
 	});
 
+	it('rejects nonzero bases that occur on both sides, including repeated occurrences', () => {
+		const unequalCategory = {
+			id: '5-3-2',
+			exponent: 5,
+			left_count: 3,
+			right_count: 2
+		};
+		expect(() => parseAndVerify('1+1+0=1+1', unequalCategory)).toThrow(/both sides/);
+	});
+
+	it('does not treat zero padding on both sides as cancellation', () => {
+		const unequalCategory = {
+			id: '3-3-3',
+			exponent: 3,
+			left_count: 3,
+			right_count: 3
+		};
+		const result = parseAndVerify('1+12+0=9+10+0', unequalCategory);
+		expect(result.powerSum).toBe('1729');
+	});
+
 	it('rejects a valid but non-primitive scaled identity', () => {
 		expect(() => parseAndVerify('5632+5406+3662+2978=6036+4366+3200+548', category)).toThrow(
 			/not primitive/
@@ -147,5 +168,18 @@ describe('parseAndVerify', () => {
 		};
 		const result = parseAndVerify('(5,3,2;±1) 38+47+123=89+118+1', nearMissCategory);
 		expect(result.right).toEqual([118n, 89n, 1n]);
+	});
+
+	it('rejects a nonzero base on both sides of a near miss but ignores the residual', () => {
+		const nearMissCategory = {
+			id: '5-3-2-pm1',
+			exponent: 5,
+			left_count: 3,
+			right_count: 2,
+			format: 'near_miss' as const
+		};
+		expect(() => parseAndVerify('172+1+1=172+1+1', nearMissCategory)).toThrow(/both sides/);
+		const result = parseAndVerify('38+47+123=89+118+1', nearMissCategory);
+		expect(result.right.at(-1)).toBe(1n);
 	});
 });

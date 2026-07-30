@@ -79,6 +79,18 @@ function compare(left, right) {
 	return left.length - right.length;
 }
 
+function hasNonzeroCrossSideCancellation(left, right) {
+	const leftCounts = new Map();
+	for (const value of left) {
+		if (value !== 0n) leftCounts.set(value, (leftCounts.get(value) ?? 0) + 1);
+	}
+	for (const value of right) {
+		const count = leftCounts.get(value) ?? 0;
+		if (value !== 0n && count > 0) return true;
+	}
+	return false;
+}
+
 function normalizedKey(row, left, right) {
 	if (row.format === 'target') {
 		left.sort((a, b) => {
@@ -144,6 +156,9 @@ for (const row of rows) {
 		const rightBases = right.slice(0, -1);
 		bases = [...left, ...rightBases];
 		if (bases.some((value) => value <= 0n)) fail(row, 'near-miss bases must be positive');
+		if (hasNonzeroCrossSideCancellation(left, rightBases)) {
+			fail(row, 'near miss contains a nonzero base on both sides');
+		}
 		leftSum = left.reduce((sum, value) => sum + value ** exponent, 0n);
 		rightSum = rightBases.reduce((sum, value) => sum + value ** exponent, residual ?? 0n);
 	} else if (row.format === 'equality') {
@@ -152,6 +167,9 @@ for (const row of rows) {
 		}
 		bases = [...left, ...right];
 		if (bases.some((value) => value < 0n)) fail(row, 'equal-sum bases must be non-negative');
+		if (hasNonzeroCrossSideCancellation(left, right)) {
+			fail(row, 'equal sum contains a nonzero base on both sides');
+		}
 		leftSum = left.reduce((sum, value) => sum + value ** exponent, 0n);
 		rightSum = right.reduce((sum, value) => sum + value ** exponent, 0n);
 	} else {

@@ -108,6 +108,27 @@ function requireNoCancellation(values: bigint[]) {
 	}
 }
 
+function requireNoCrossSideCancellation(left: bigint[], right: bigint[]) {
+	const leftCounts = new Map<bigint, number>();
+	for (const value of left) {
+		if (value !== 0n) leftCounts.set(value, (leftCounts.get(value) ?? 0) + 1);
+	}
+
+	let cancellationCount = 0;
+	for (const value of right) {
+		const count = leftCounts.get(value) ?? 0;
+		if (value !== 0n && count > 0) {
+			cancellationCount += 1;
+			leftCounts.set(value, count - 1);
+		}
+	}
+	if (cancellationCount > 0) {
+		throw new Error(
+			`The solution contains ${cancellationCount} nonzero ${cancellationCount === 1 ? 'term' : 'terms'} that cancel across both sides.`
+		);
+	}
+}
+
 function formatSignedTerms(values: bigint[]) {
 	return values
 		.map((value, index) => {
@@ -218,6 +239,7 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 			const difference = absolute(leftSum - rightSum);
 			throw new Error(`Not equal — the two sides differ by ${difference}.`);
 		}
+		requireNoCrossSideCancellation(left, right);
 		const max = [...left, ...right].reduce(
 			(current, value) => (value > current ? value : current),
 			0n
@@ -262,6 +284,7 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 	) {
 		throw new Error('A rearrangement of the same terms is a trivial identity.');
 	}
+	requireNoCrossSideCancellation(left, right);
 	if (
 		category.left_count === category.right_count &&
 		compareTerms(normalizedLeft, normalizedRight) < 0
