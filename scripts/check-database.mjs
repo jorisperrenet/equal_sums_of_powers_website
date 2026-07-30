@@ -186,6 +186,32 @@ for (const row of rows) {
 	else identities.set(key, row.id);
 }
 
+const claimCountQuery = `SELECT COUNT(*) AS count FROM search_claims`;
+const claimCountExecution = spawnSync(
+	process.execPath,
+	[
+		wrangler,
+		'd1',
+		'execute',
+		'manifold',
+		remote ? '--remote' : '--local',
+		'--command',
+		claimCountQuery,
+		'--json',
+		...(persistTo ? ['--persist-to', persistTo] : [])
+	],
+	{ encoding: 'utf8' }
+);
+if (claimCountExecution.status !== 0) {
+	process.stderr.write(claimCountExecution.stderr || claimCountExecution.stdout);
+	process.exit(claimCountExecution.status ?? 1);
+}
+const claimCount =
+	JSON.parse(claimCountExecution.stdout).flatMap((batch) => batch.results ?? [])[0]?.count ?? 0;
+if (Number(claimCount) > 20) {
+	failures.push(`search_claims: contains ${claimCount} rows; maximum is 20`);
+}
+
 if (failures.length) {
 	console.error(`Database audit failed with ${failures.length} problem(s):`);
 	for (const failure of failures) console.error(`- ${failure}`);

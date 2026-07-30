@@ -305,7 +305,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 					 JOIN contributors contributor ON contributor.id = c.contributor_id
 					 LEFT JOIN search_claim_resources cr ON cr.search_claim_id = c.id
 					 LEFT JOIN resources r ON r.id = cr.resource_id
-					 ORDER BY c.created_at DESC LIMIT 100`
+						 ORDER BY c.created_at DESC LIMIT 20`
 				)
 				.all<SearchClaimRow>()
 		: { results: [] as SearchClaimRow[] };
@@ -691,6 +691,15 @@ export const actions: Actions = {
 			.bind(categoryId)
 			.first<{ id: string }>();
 		if (!category) return fail(400, { ...claimValues, message: 'Choose a valid category.' });
+		const claimCount = await db
+			.prepare('SELECT COUNT(*) AS count FROM search_claims')
+			.first<{ count: number }>();
+		if (Number(claimCount?.count ?? 0) >= 20) {
+			return fail(409, {
+				...claimValues,
+				message: 'The search coverage archive has reached its limit of 20 claims.'
+			});
+		}
 
 		const normalizedLowerRadius = BigInt(rawLowerRadius).toString();
 		const normalizedUpperRadius = BigInt(rawUpperRadius).toString();
@@ -731,6 +740,12 @@ export const actions: Actions = {
 			}
 			await db.batch(statements);
 		} catch (error) {
+			if (error instanceof Error && /search coverage limit reached/i.test(error.message)) {
+				return fail(409, {
+					...claimValues,
+					message: 'The search coverage archive has reached its limit of 20 claims.'
+				});
+			}
 			if (error instanceof Error && /unique/i.test(error.message)) {
 				return fail(409, { ...claimValues, message: 'That search claim is already recorded.' });
 			}
