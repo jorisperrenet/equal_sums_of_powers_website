@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"compare:euler": "node scripts/compare-euler-database.mjs",
+		"predev": "npm run db:migrate:local",
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "wrangler dev .svelte-kit/cloudflare/_worker.js --port 4173",

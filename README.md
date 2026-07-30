@@ -7,11 +7,11 @@ and D1. The production site is available at <https://powersums.jorisperrenet.com
 
 ```sh
 npm install
-npm run db:migrate:local
 npm run dev
 ```
 
-The single migration creates the normalized schema and imports the verified reference tables.
+`npm run dev` applies any missing local migrations before starting Vite. The migrations create the
+normalized schema and import the verified reference tables.
 
 Inspect the local database with:
 

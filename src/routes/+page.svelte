@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { resolve } from '$app/paths';
-	import { normalizeIdentity } from '$lib/identity';
+	import { normalizeIdentity, type IdentityShape } from '$lib/identity';
 	import { TARGET_COUNT, TARGET_MAX, TARGET_MIN } from '$lib/target-range';
 	import { onMount, tick } from 'svelte';
 	import 'katex/dist/katex.min.css';
+
+	type ArchiveHref =
+		`/${string}/${string}/` | `/${string}/${string}/?${string}` | `/${string}/${string}/#${string}`;
 
 	let { data, form } = $props();
 
@@ -63,6 +66,51 @@
 		new Map(data.references.map((reference, index) => [reference.id, index + 1]))
 	);
 	const targetValues = Array.from({ length: TARGET_COUNT }, (_, index) => index + TARGET_MIN);
+	let breadcrumbMarkup = $derived(
+		`<script type="application/ld+json">${JSON.stringify(
+			data.showRecent
+				? {
+						'@context': 'https://schema.org',
+						'@graph': [
+							{
+								'@type': 'WebSite',
+								name: 'Equal Sums of Powers',
+								alternateName: 'Power Sums Archive',
+								url: 'https://powersums.jorisperrenet.com/'
+							},
+							{
+								'@type': 'BreadcrumbList',
+								itemListElement: [
+									{
+										'@type': 'ListItem',
+										position: 1,
+										name: 'Equal Sums of Powers',
+										item: data.canonicalUrl
+									}
+								]
+							}
+						]
+					}
+				: {
+						'@context': 'https://schema.org',
+						'@type': 'BreadcrumbList',
+						itemListElement: [
+							{
+								'@type': 'ListItem',
+								position: 1,
+								name: 'Equal Sums of Powers',
+								item: 'https://powersums.jorisperrenet.com/'
+							},
+							{
+								'@type': 'ListItem',
+								position: 2,
+								name: data.heading,
+								item: data.canonicalUrl
+							}
+						]
+					}
+		).replace(/</g, '\\u003c')}</scr` + `ipt>`
+	);
 
 	onMount(async () => {
 		try {
@@ -118,8 +166,11 @@
 	});
 
 	async function openContributionForm(event: MouseEvent) {
-		if (!data.showRecent) return;
 		event.preventDefault();
+		if (!data.showRecent) {
+			location.assign(resolve('/#contribute'));
+			return;
+		}
 		contributeOpen = true;
 		await tick();
 		history.pushState(null, '', '#contribute');
@@ -156,6 +207,48 @@
 
 	function absoluteTerm(value: string | number) {
 		return isNegative(value) ? String(value).slice(1) : String(value);
+	}
+
+	function poweredTerms(terms: Array<string | number>, exponent: number) {
+		return terms
+			.map((term, index) => {
+				const negative = isNegative(term);
+				const sign = negative ? '-' : index === 0 ? '' : '+';
+				return `${sign}${absoluteTerm(term)}^${exponent}`;
+			})
+			.join('');
+	}
+
+	function plainIdentity(leftTerms: string, rightTerms: string, category: IdentityShape) {
+		const identity = normalizeIdentity(leftTerms, rightTerms, category);
+		const left = poweredTerms(identity.left, category.exponent);
+		if (category.format === 'target') return `${left} = ${identity.right[0]}`;
+		const right = poweredTerms(identity.right, category.exponent);
+		if (category.format === 'near_miss') {
+			return `${left} = ${right}${Number(identity.residual) < 0 ? '-1' : '+1'}`;
+		}
+		return `${left} = ${right}`;
+	}
+
+	function resultPageHref(page: number) {
+		const base = data.categoryPaths[data.selectedCategory];
+		const parameters = [
+			data.sort === 'date' ? 'sort=date' : '',
+			page > 1 ? `page=${page}` : ''
+		].filter(Boolean);
+		return `${base}${parameters.length ? `?${parameters.join('&')}` : ''}`;
+	}
+
+	function paginationPages(current: number, total: number): Array<number | null> {
+		if (total <= 9) return Array.from({ length: total }, (_, index) => index + 1);
+		const pages = new Set([1, total, current - 2, current - 1, current, current + 1, current + 2]);
+		const visible = [...pages].filter((page) => page >= 1 && page <= total).sort((a, b) => a - b);
+		const result: Array<number | null> = [];
+		for (const page of visible) {
+			if (result.length && page - (result.at(-1) as number) > 1) result.push(null);
+			result.push(page);
+		}
+		return result;
 	}
 
 	function formatRadius(value: string) {
@@ -204,26 +297,46 @@
 </script>
 
 <svelte:head>
-	<title>Equal Sums of Like Powers</title>
-	<meta name="description" content="A public, verified table of equal sums of like powers." />
+	<title>{data.metaTitle}</title>
+	<meta name="description" content={data.metaDescription} />
+	<link rel="canonical" href={data.canonicalUrl} />
+	<meta name="robots" content={data.noindex ? 'noindex,follow' : 'index,follow'} />
+	<meta property="og:title" content={data.metaTitle} />
+	<meta property="og:description" content={data.metaDescription} />
+	<meta property="og:site_name" content="Equal Sums of Powers" />
+	<meta property="og:url" content={data.canonicalUrl} />
+	<meta property="og:image" content="https://powersums.jorisperrenet.com/powers-preview.png" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
+	{@html breadcrumbMarkup}
 </svelte:head>
 
 <div class="min-h-screen bg-[#f5f5f2] text-[#202020]">
 	<header class="border-b border-[#b9b9b4] bg-white">
-		<div class="mx-auto max-w-6xl px-4 py-5 sm:px-6">
-			<div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
-				<a href={resolve('/')} class="font-serif text-2xl font-bold text-[#202020]"
-					>Equal Sums of Like Powers</a
-				>
-				<div class="flex gap-4 text-sm text-[#555]">
+		<div class="mx-auto max-w-6xl px-4 py-3 sm:px-6">
+			<div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+				<div class="flex items-center gap-2.5">
 					<a
-						href={data.showRecent
-							? resolve(`/?category=${data.selectedCategory}#references`)
-							: '#references'}
-						class="text-[#0645ad] hover:underline">References</a
+						href="https://jorisperrenet.com/"
+						aria-label="Joris Perrenet’s website"
+						title="Joris Perrenet’s website"
 					>
+						<img
+							src="/personal-logo.svg"
+							alt="Joris Perrenet"
+							width="22"
+							height="24"
+							class="h-6 w-auto"
+						/>
+					</a>
+					<a href={resolve('/')} class="font-serif text-xl font-bold text-[#202020]"
+						>Equal Sums of Like Powers</a
+					>
+				</div>
+				<div class="flex gap-4 text-sm text-[#555]">
+					<a href={resolve('/references/')} class="text-[#0645ad] hover:underline">References</a>
 					<a
-						href={data.showRecent ? '#contribute' : resolve('/?view=recent#contribute')}
+						href={data.showRecent ? '#contribute' : resolve('/#contribute')}
 						onclick={openContributionForm}
 						class="text-[#0645ad] hover:underline">Contribute a result</a
 					>
@@ -234,7 +347,7 @@
 		<nav class="border-t border-[#ddd] bg-[#ecece8]" aria-label="Power groups">
 			<div class="mx-auto flex max-w-6xl overflow-x-auto px-4 sm:px-6">
 				<a
-					href={resolve('/?view=recent')}
+					href={resolve('/')}
 					class={data.showRecent
 						? 'border-x border-t-2 border-[#888] border-t-[#333] bg-white px-4 py-2.5 text-sm font-bold whitespace-nowrap text-[#202020]'
 						: 'border-r border-[#d0d0cb] px-4 py-2.5 text-sm whitespace-nowrap text-[#0645ad] hover:bg-[#e2e2dd] hover:underline'}
@@ -243,7 +356,7 @@
 				</a>
 				{#each exponentGroups as group (group.exponent)}
 					<a
-						href={resolve(`/?category=${group.categories[0].id}`)}
+						href={data.categoryPaths[group.categories[0].id]}
 						class={!data.showRecent && group.exponent === selectedCategory?.exponent
 							? 'border-x border-t-2 border-[#888] border-t-[#333] bg-white px-4 py-2.5 text-sm font-bold whitespace-nowrap text-[#202020]'
 							: 'border-r border-[#d0d0cb] px-4 py-2.5 text-sm whitespace-nowrap text-[#0645ad] hover:bg-[#e2e2dd] hover:underline'}
@@ -261,7 +374,7 @@
 					<span class="font-bold">{ordinal(selectedExponentGroup.exponent)}-power category:</span>
 					{#each selectedExponentGroup.categories as category (category.id)}
 						<a
-							href={resolve(`/?category=${category.id}`)}
+							href={data.categoryPaths[category.id]}
 							aria-current={category.id === data.selectedCategory ? 'page' : undefined}
 							class={category.id === data.selectedCategory
 								? 'border border-[#555] bg-[#e5e5e0] px-2 py-1 font-bold text-[#202020]'
@@ -297,7 +410,7 @@
 								<tr class="border-b border-[#ddd] last:border-b-0 even:bg-[#f7f7f4]">
 									<td class="border-r border-[#ddd] px-2 py-2">
 										<a
-											href={resolve(`/?category=${result.category_id}`)}
+											href={data.categoryPaths[result.category_id]}
 											class="text-[#0645ad] hover:underline"
 										>
 											{result.notation ??
@@ -306,6 +419,7 @@
 									</td>
 									<td
 										class="border-r border-[#ddd] px-2 py-2 font-serif text-base whitespace-nowrap"
+										title={plainIdentity(result.left_terms, result.right_terms, result)}
 									>
 										{#each identity.left as term, i (i)}
 											{#if i}<span class="px-1">{isNegative(term) ? '−' : '+'}</span
@@ -334,9 +448,7 @@
 									<td class="px-2 py-2">
 										{#if result.tool_reference_id}
 											<a
-												href={resolve(
-													`/?category=${result.category_id}#reference-${result.tool_reference_id}`
-												)}
+												href={resolve(`/references/#reference-${result.tool_reference_id}`)}
 												class="text-[#0645ad] hover:underline"
 												>[{referenceNumber(result.tool_reference_id)}] {result.tool_name}</a
 											>
@@ -401,9 +513,19 @@
 			<section aria-labelledby="leaderboard-heading">
 				<div class="border-b-2 border-[#555] pb-3">
 					<div class="flex flex-wrap items-end justify-between gap-3">
-						<h1 id="leaderboard-heading" class="font-serif text-3xl font-bold">Leaderboard</h1>
+						<div>
+							<h1 id="leaderboard-heading" class="font-serif text-3xl font-bold">{data.heading}</h1>
+							<p class="mt-1 text-sm text-[#555]">
+								{data.selectedCount} machine-verified {selectedCategory?.format === 'target'
+									? 'solutions'
+									: 'identities'}, ordered by {data.sort === 'n'
+									? 'integer target'
+									: data.sort === 'highest'
+										? 'highest term'
+										: 'discovery date'}.
+							</p>
+						</div>
 						<div class="flex items-center gap-3 text-sm">
-							<span class="text-[#555]">{data.selectedCount} recorded identities</span>
 							<a
 								href={resolve(`/export.csv?category=${data.selectedCategory}&sort=${data.sort}`)}
 								class="border border-[#888] bg-white px-2 py-1 text-[#0645ad] hover:bg-[#f0f0ec] hover:underline"
@@ -415,7 +537,7 @@
 				<nav class="mt-3 text-sm" aria-label="Result sorting">
 					<span class="font-bold">Sort by:</span>
 					<a
-						href={resolve(`/?category=${data.selectedCategory}`)}
+						href={data.categoryPaths[data.selectedCategory]}
 						class={data.sort !== 'date'
 							? 'ml-2 font-bold text-[#202020]'
 							: 'ml-2 text-[#0645ad] hover:underline'}
@@ -423,7 +545,7 @@
 					>
 					<span class="px-1 text-[#888]">|</span>
 					<a
-						href={resolve(`/?category=${data.selectedCategory}&sort=date`)}
+						href={resolve(`${data.categoryPaths[data.selectedCategory]}?sort=date` as ArchiveHref)}
 						class={data.sort === 'date'
 							? 'font-bold text-[#202020]'
 							: 'text-[#0645ad] hover:underline'}>Date</a
@@ -487,6 +609,11 @@
 									>
 										<td
 											class="border-r border-[#ddd] px-2 py-2 font-serif text-base whitespace-nowrap"
+											title={plainIdentity(
+												submission.left_terms,
+												submission.right_terms,
+												selectedCategory!
+											)}
 										>
 											{#each identity.left as term, i (i)}
 												{#if i}
@@ -519,7 +646,7 @@
 										<td class="px-2 py-2 text-sm">
 											{#if submission.tool_reference_id}
 												<a
-													href={`#reference-${submission.tool_reference_id}`}
+													href={resolve(`/references/#reference-${submission.tool_reference_id}`)}
 													class="text-[#0645ad] hover:underline"
 													>[{referenceNumber(submission.tool_reference_id)}] {submission.tool_name}</a
 												>
@@ -548,24 +675,36 @@
 								: 'discovery date, newest first'}. Scroll horizontally on narrow screens.
 					</p>
 					{#if data.selectedCount > data.pageSize}
+						{@const totalPages = Math.ceil(data.selectedCount / data.pageSize)}
 						<nav
-							class="mt-4 flex items-center justify-center gap-4 text-sm"
+							class="mt-4 flex flex-wrap items-center justify-center gap-2 text-sm"
 							aria-label="Result pages"
 						>
 							{#if data.page > 1}
 								<a
-									href={resolve(
-										`/?category=${data.selectedCategory}&sort=${data.sort}&page=${data.page - 1}`
-									)}
+									href={resolve(resultPageHref(data.page - 1) as ArchiveHref)}
 									class="text-[#0645ad] hover:underline">← Previous</a
 								>
 							{/if}
-							<span>Page {data.page} of {Math.ceil(data.selectedCount / data.pageSize)}</span>
+							{#each paginationPages(data.page, totalPages) as page, index (`${page}-${index}`)}
+								{#if page === null}
+									<span class="px-1 text-[#777]" aria-hidden="true">…</span>
+								{:else if page === data.page}
+									<span
+										class="border border-[#555] bg-[#e5e5e0] px-2 py-1 font-bold"
+										aria-current="page">{page}</span
+									>
+								{:else}
+									<a
+										href={resolve(resultPageHref(page) as ArchiveHref)}
+										class="border border-[#aaa] bg-white px-2 py-1 text-[#0645ad] hover:bg-[#f2f2ee] hover:underline"
+										aria-label={`Page ${page}`}>{page}</a
+									>
+								{/if}
+							{/each}
 							{#if data.page * data.pageSize < data.selectedCount}
 								<a
-									href={resolve(
-										`/?category=${data.selectedCategory}&sort=${data.sort}&page=${data.page + 1}`
-									)}
+									href={resolve(resultPageHref(data.page + 1) as ArchiveHref)}
 									class="text-[#0645ad] hover:underline">Next →</a
 								>
 							{/if}
@@ -575,7 +714,7 @@
 					<div class="mt-4 border border-[#aaa] bg-white px-5 py-10 text-center">
 						<p>No non-trivial identities have been recorded in this category.</p>
 						<a
-							href={resolve('/?view=recent#contribute')}
+							href={resolve('/#contribute')}
 							class="mt-2 inline-block text-sm text-[#0645ad] hover:underline"
 							>Contribute the first one</a
 						>
@@ -623,7 +762,7 @@
 									>
 										<td class="border-r border-[#ddd] px-3 py-3">
 											<a
-												href={resolve(`/?category=${claim.category_id}`)}
+												href={data.categoryPaths[claim.category_id]}
 												class="text-[#0645ad] hover:underline"
 												>{claimCategory ? notation(claimCategory) : claim.category_id}</a
 											>
@@ -643,9 +782,7 @@
 										<td class="border-r border-[#ddd] px-3 py-3">
 											{#if claim.tool_reference_id}
 												<a
-													href={resolve(
-														`/?category=${claim.category_id}#reference-${claim.tool_reference_id}`
-													)}
+													href={resolve(`/references/#reference-${claim.tool_reference_id}`)}
 													class="text-[#0645ad] hover:underline"
 													>[{referenceNumber(claim.tool_reference_id)}] {claim.tool_name}</a
 												>
@@ -679,11 +816,7 @@
 					<summary class="cursor-pointer bg-[#e5e5e0] px-4 py-2.5 text-sm font-bold"
 						>Report a search with no new results</summary
 					>
-					<form
-						method="POST"
-						action="?view=recent&/claimSearch"
-						class="border-t border-[#aaa] p-4 sm:p-5"
-					>
+					<form method="POST" action="?/claimSearch" class="border-t border-[#aaa] p-4 sm:p-5">
 						<p class="mb-4 text-sm leading-6 text-[#444]">
 							Please link to source code or a public tool where possible. Open methods make coverage
 							claims easier to reproduce and extend.
@@ -822,7 +955,7 @@
 				</summary>
 				<form
 					method="POST"
-					action="?view=recent&/submitIdentity#contribute"
+					action="?/submitIdentity#contribute"
 					class="border-t border-[#aaa] p-4 sm:p-5"
 				>
 					<p class="mb-4 text-sm leading-6 text-[#444]">
@@ -940,43 +1073,6 @@
 					</div>
 				</form>
 			</details>
-		{/if}
-
-		{#if !data.showRecent}
-			<section
-				id="references"
-				class="mt-12 border-t-2 border-[#555] pt-6"
-				aria-labelledby="references-heading"
-			>
-				<h2 id="references-heading" class="font-serif text-2xl font-bold">References</h2>
-				<p class="mt-1 text-sm leading-6 text-[#444]">
-					Shared tools, source code, background pages, and source lists cited by the tables.
-				</p>
-				{#if data.references.length}
-					<ol class="mt-4 border border-[#aaa] bg-white text-sm">
-						{#each data.references as reference, index (reference.id)}
-							<li
-								id={`reference-${reference.id}`}
-								class="grid gap-1 border-b border-[#ddd] px-3 py-2 last:border-b-0 sm:grid-cols-[3rem_1fr_auto] sm:gap-3"
-							>
-								<span class="font-bold">[{index + 1}]</span>
-								<a
-									href={reference.url}
-									target="_blank"
-									rel="noreferrer"
-									class="break-all text-[#0645ad] hover:underline"
-									>{reference.title} — {reference.url} ↗</a
-								>
-								<span class="text-[#666]">cited {reference.usage_count} times</span>
-							</li>
-						{/each}
-					</ol>
-				{:else}
-					<p class="mt-4 border border-[#aaa] bg-white px-4 py-5 text-sm">
-						No references recorded.
-					</p>
-				{/if}
-			</section>
 		{/if}
 
 		<datalist id="known-references">
