@@ -562,7 +562,7 @@ export const actions: Actions = {
 		try {
 			const submissionIds = newResults.map(() => crypto.randomUUID());
 			const statement = db.prepare(
-				`INSERT OR IGNORE INTO submissions
+				`INSERT INTO submissions
 					 (id, category_id, contributor_id, left_terms, right_terms, tool_text)
 					 SELECT ?, ?, id, ?, ?, ? FROM contributors WHERE name = ?`
 			);
