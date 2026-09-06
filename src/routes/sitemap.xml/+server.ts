@@ -3,11 +3,9 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ platform }) => {
 	const rows = platform?.env.DB
 		? await platform.env.DB.prepare(
-				`SELECT c.id, c.exponent, COUNT(s.id) AS submission_count
-				 FROM categories c
-				 LEFT JOIN submissions s ON s.category_id = c.id
-				 GROUP BY c.id
-				 ORDER BY c.exponent DESC, c.id`
+				`SELECT id, exponent, submission_count
+				 FROM categories
+				 ORDER BY exponent DESC, id`
 			).all<{
 				id: string;
 				exponent: number;

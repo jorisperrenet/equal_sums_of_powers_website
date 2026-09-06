@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
+# Sort-by-date views duplicate the canonical pages and the CSV export is not a
+# page; keeping crawlers off both halves the database work they cause.
+Disallow: /export.csv
+Disallow: /*?sort=date
 
 Sitemap: https://powersums.jorisperrenet.com/sitemap.xml

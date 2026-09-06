@@ -528,6 +528,7 @@
 						<div class="flex items-center gap-3 text-sm">
 							<a
 								href={resolve(`/export.csv?category=${data.selectedCategory}&sort=${data.sort}`)}
+								rel="nofollow"
 								class="border border-[#888] bg-white px-2 py-1 text-[#0645ad] hover:bg-[#f0f0ec] hover:underline"
 								>Export CSV</a
 							>
@@ -546,6 +547,7 @@
 					<span class="px-1 text-[#888]">|</span>
 					<a
 						href={resolve(`${data.categoryPaths[data.selectedCategory]}?sort=date` as ArchiveHref)}
+						rel="nofollow"
 						class={data.sort === 'date'
 							? 'font-bold text-[#202020]'
 							: 'text-[#0645ad] hover:underline'}>Date</a

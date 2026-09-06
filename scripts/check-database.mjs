@@ -7,36 +7,49 @@ const wrangler = fileURLToPath(
 const remote = process.argv.includes('--remote');
 const persistIndex = process.argv.indexOf('--persist-to');
 const persistTo = persistIndex >= 0 ? process.argv[persistIndex + 1] : null;
-const query = `SELECT s.id, s.left_terms, s.right_terms,
+
+function execute(query) {
+	const execution = spawnSync(
+		process.execPath,
+		[
+			wrangler,
+			'd1',
+			'execute',
+			'manifold',
+			remote ? '--remote' : '--local',
+			'--command',
+			query,
+			'--json',
+			...(persistTo ? ['--persist-to', persistTo] : [])
+		],
+		// Production returns several megabytes; the 1 MB default maxBuffer would truncate the JSON.
+		{ encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }
+	);
+	if (execution.error || execution.status !== 0) {
+		if (execution.error) process.stderr.write(`${execution.error.message}\n`);
+		process.stderr.write(execution.stderr || execution.stdout);
+		process.exit(execution.status ?? 1);
+	}
+	return JSON.parse(execution.stdout).flatMap((batch) => batch.results ?? []);
+}
+
+const rows = execute(`SELECT s.id, s.left_terms, s.right_terms, s.max_term, s.discovered_at,
  c.id AS category_id, c.exponent, c.left_count, c.right_count, c.format,
  contributor.id AS contributor_id
  FROM submissions s
  LEFT JOIN categories c ON c.id = s.category_id
  LEFT JOIN contributors contributor ON contributor.id = s.contributor_id
- ORDER BY s.id`;
-const execution = spawnSync(
-	process.execPath,
-	[
-		wrangler,
-		'd1',
-		'execute',
-		'manifold',
-		remote ? '--remote' : '--local',
-		'--command',
-		query,
-		'--json',
-		...(persistTo ? ['--persist-to', persistTo] : [])
-	],
-	{ encoding: 'utf8' }
+ ORDER BY s.id`);
+const categories = execute(`SELECT id, format, submission_count FROM categories ORDER BY id`);
+const coverage = execute(
+	`SELECT category_id, n, solution_count FROM target_coverage ORDER BY category_id, n`
 );
-if (execution.status !== 0) {
-	process.stderr.write(execution.stderr || execution.stdout);
-	process.exit(execution.status ?? 1);
-}
+const claimCount = execute(`SELECT COUNT(*) AS count FROM search_claims`)[0]?.count ?? 0;
 
-const rows = JSON.parse(execution.stdout).flatMap((batch) => batch.results ?? []);
 const failures = [];
 const identities = new Map();
+const submissionCounts = new Map();
+const coverageCounts = new Map();
 
 function fail(row, message) {
 	failures.push(`${row.id}: ${message}`);
@@ -117,10 +130,24 @@ for (const row of rows) {
 		fail(row, 'references a missing category');
 		continue;
 	}
+	submissionCounts.set(row.category_id, (submissionCounts.get(row.category_id) ?? 0) + 1);
 	if (!row.contributor_id) fail(row, 'references a missing contributor');
+	if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(row.discovered_at)) {
+		fail(row, `discovered_at "${row.discovered_at}" is not in YYYY-MM-DDTHH:MM:SSZ form`);
+	}
 	const left = parseTerms(row, 'left_terms');
 	const right = parseTerms(row, 'right_terms');
 	if (!left.length || !right.length) continue;
+
+	// The trigger-maintained sort key must equal the largest absolute term on
+	// either side (including a target N or a near-miss residual).
+	const expectedMaxTerm = [...left, ...right].reduce(
+		(largest, value) => (absolute(value) > largest ? absolute(value) : largest),
+		0n
+	);
+	if (row.max_term === null || BigInt(row.max_term) !== expectedMaxTerm) {
+		fail(row, `max_term is ${row.max_term} but the largest absolute term is ${expectedMaxTerm}`);
+	}
 
 	let bases;
 	let leftSum;
@@ -128,6 +155,8 @@ for (const row of rows) {
 	let requiresPrimitive = true;
 	const exponent = BigInt(row.exponent);
 	if (row.format === 'target') {
+		const coverageKey = `${row.category_id}:${right[0]}`;
+		coverageCounts.set(coverageKey, (coverageCounts.get(coverageKey) ?? 0) + 1);
 		if (left.length !== row.left_count || right.length !== 1) {
 			fail(row, `expected ${row.left_count} signed terms and one target`);
 		}
@@ -186,28 +215,32 @@ for (const row of rows) {
 	else identities.set(key, row.id);
 }
 
-const claimCountQuery = `SELECT COUNT(*) AS count FROM search_claims`;
-const claimCountExecution = spawnSync(
-	process.execPath,
-	[
-		wrangler,
-		'd1',
-		'execute',
-		'manifold',
-		remote ? '--remote' : '--local',
-		'--command',
-		claimCountQuery,
-		'--json',
-		...(persistTo ? ['--persist-to', persistTo] : [])
-	],
-	{ encoding: 'utf8' }
-);
-if (claimCountExecution.status !== 0) {
-	process.stderr.write(claimCountExecution.stderr || claimCountExecution.stdout);
-	process.exit(claimCountExecution.status ?? 1);
+// Derived data maintained by the triggers from migration 0023 must match a
+// fresh tally of the submissions.
+for (const category of categories) {
+	const expected = submissionCounts.get(category.id) ?? 0;
+	if (Number(category.submission_count) !== expected) {
+		failures.push(
+			`categories.${category.id}: submission_count is ${category.submission_count} but ${expected} submissions exist`
+		);
+	}
 }
-const claimCount =
-	JSON.parse(claimCountExecution.stdout).flatMap((batch) => batch.results ?? [])[0]?.count ?? 0;
+const coverageRows = new Map(
+	coverage.map((entry) => [`${entry.category_id}:${entry.n}`, Number(entry.solution_count)])
+);
+for (const [key, expected] of coverageCounts) {
+	if (coverageRows.get(key) !== expected) {
+		failures.push(
+			`target_coverage ${key}: has ${coverageRows.get(key) ?? 'no row'} but ${expected} solutions exist`
+		);
+	}
+}
+for (const [key, count] of coverageRows) {
+	if (!coverageCounts.has(key)) {
+		failures.push(`target_coverage ${key}: has ${count} but no submissions exist`);
+	}
+}
+
 if (Number(claimCount) > 20) {
 	failures.push(`search_claims: contains ${claimCount} rows; maximum is 20`);
 }
@@ -219,5 +252,5 @@ if (failures.length) {
 }
 
 console.log(
-	`Database audit passed: ${rows.length} submissions checked (${remote ? 'remote' : 'local'} D1).`
+	`Database audit passed: ${rows.length} submissions, ${categories.length} category counts, and ${coverage.length} target coverage rows checked (${remote ? 'remote' : 'local'} D1).`
 );

@@ -45,15 +45,13 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 			: category.format === 'target'
 				? 'n'
 				: 'highest';
+	// Same index-backed orderings as the leaderboard page (migration 0023).
 	const order =
 		sort === 'n'
-			? "CAST(json_extract(s.right_terms, '$[0]') AS INTEGER) ASC, s.discovered_at ASC"
+			? "CAST(json_extract(s.right_terms, '$[0]') AS INTEGER) ASC, s.discovered_at ASC, s.id ASC"
 			: sort === 'highest'
-				? `MAX(
-					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.left_terms)),
-					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.right_terms))
-				  ) ASC, s.discovered_at ASC`
-				: 's.discovered_at DESC';
+				? 's.max_term ASC, s.discovered_at ASC, s.id ASC'
+				: 's.discovered_at DESC, s.id DESC';
 	const results = await db
 		.prepare(
 			`SELECT s.left_terms, s.right_terms, contributor.name AS username,

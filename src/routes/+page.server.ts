@@ -71,7 +71,6 @@ type ResourceRow = {
 	id: number;
 	title: string;
 	url: string;
-	usage_count: number;
 };
 
 type TargetCoverageRow = {
@@ -175,20 +174,21 @@ function identityKey(leftTerms: string, rightTerms: string, category: CategorySh
 	return `${JSON.stringify(normalized.left)}=${JSON.stringify(right)}`;
 }
 
+// `submission_count` is maintained by triggers (migration 0023), so this reads
+// one row per category plus one indexed row for each example instead of
+// touching every submission on every request.
 async function getCategories(db: D1Database) {
 	const result = await db
 		.prepare(
 			`SELECT c.id, c.exponent, c.left_count, c.right_count,
-			 c.format, c.notation,
+			 c.format, c.notation, c.submission_count,
 			 (SELECT example.left_terms FROM submissions example
 			  WHERE example.category_id = c.id
 			  ORDER BY example.discovered_at ASC LIMIT 1) AS example_left_terms,
 			 (SELECT example.right_terms FROM submissions example
 			  WHERE example.category_id = c.id
-			  ORDER BY example.discovered_at ASC LIMIT 1) AS example_right_terms,
-			 COUNT(s.id) AS submission_count
-			 FROM categories c LEFT JOIN submissions s ON s.category_id = c.id
-			 GROUP BY c.id
+			  ORDER BY example.discovered_at ASC LIMIT 1) AS example_right_terms
+			 FROM categories c
 			 ORDER BY (c.left_count + c.right_count) ASC, c.exponent DESC, c.left_count DESC`
 		)
 		.all<CategoryRow>();
@@ -271,30 +271,36 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 			redirect(308, normalizedUrl);
 		}
 	}
-	const submissionOrder =
+	// Each ordering matches an index on submissions exactly, including the id
+	// tie-breaker, so only the requested page is read. `max_term` and the
+	// canonical timestamps are maintained by triggers (migration 0023). The
+	// page is selected from the bare table first so that skipped rows cost an
+	// index entry each rather than a full set of joins.
+	const submissionOrder = (prefix: string) =>
 		sort === 'n'
-			? "CAST(json_extract(s.right_terms, '$[0]') AS INTEGER) ASC, s.discovered_at ASC, s.id ASC"
+			? `CAST(json_extract(${prefix}right_terms, '$[0]') AS INTEGER) ASC, ${prefix}discovered_at ASC, ${prefix}id ASC`
 			: sort === 'highest'
-				? `MAX(
-					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.left_terms)),
-					(SELECT MAX(ABS(CAST(value AS INTEGER))) FROM json_each(s.right_terms))
-				  ) ASC, s.discovered_at ASC, s.id ASC`
-				: 'datetime(s.discovered_at) DESC, s.id DESC';
-	const submissions = await db
-		.prepare(
-			`SELECT s.id, s.category_id, contributor.name AS username, s.left_terms, s.right_terms,
-			 COALESCE(tool.title, s.tool_text) AS tool_name,
-			 tool.url AS tool_url,
-			 tool.id AS tool_reference_id,
-			 s.discovered_at AS created_at
-			 FROM submissions s
-			 JOIN contributors contributor ON contributor.id = s.contributor_id
-			 LEFT JOIN submission_resources str ON str.submission_id = s.id AND str.role = 'tool'
-			 LEFT JOIN resources tool ON tool.id = str.resource_id
-			 WHERE s.category_id = ? ORDER BY ${submissionOrder} LIMIT ? OFFSET ?`
-		)
-		.bind(selectedCategory, pageSize, (page - 1) * pageSize)
-		.all<SubmissionRow>();
+				? `${prefix}max_term ASC, ${prefix}discovered_at ASC, ${prefix}id ASC`
+				: `${prefix}discovered_at DESC, ${prefix}id DESC`;
+	// The recent-results view never renders the leaderboard table.
+	const submissions = showRecent
+		? { results: [] as SubmissionRow[] }
+		: await db
+				.prepare(
+					`SELECT s.id, s.category_id, contributor.name AS username, s.left_terms, s.right_terms,
+					 COALESCE(tool.title, s.tool_text) AS tool_name,
+					 tool.url AS tool_url,
+					 tool.id AS tool_reference_id,
+					 s.discovered_at AS created_at
+					 FROM (SELECT * FROM submissions WHERE category_id = ?
+					       ORDER BY ${submissionOrder('')} LIMIT ? OFFSET ?) s
+					 JOIN contributors contributor ON contributor.id = s.contributor_id
+					 LEFT JOIN submission_resources str ON str.submission_id = s.id AND str.role = 'tool'
+					 LEFT JOIN resources tool ON tool.id = str.resource_id
+					 ORDER BY ${submissionOrder('s.')}`
+				)
+				.bind(selectedCategory, pageSize, (page - 1) * pageSize)
+				.all<SubmissionRow>();
 	const searchClaims = showRecent
 		? await db
 				.prepare(
@@ -319,32 +325,28 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 					 s.discovered_at AS created_at,
 					 category.exponent, category.left_count, category.right_count,
 					 category.format, category.notation
-					 FROM submissions s
+					 FROM (SELECT * FROM submissions
+					       ORDER BY discovered_at DESC, id DESC LIMIT 20) s
 					 JOIN contributors contributor ON contributor.id = s.contributor_id
 					 JOIN categories category ON category.id = s.category_id
 					 LEFT JOIN submission_resources str
 					   ON str.submission_id = s.id AND str.role = 'tool'
 					 LEFT JOIN resources tool ON tool.id = str.resource_id
-					 ORDER BY datetime(s.discovered_at) DESC, s.id DESC LIMIT 20`
+					 ORDER BY s.discovered_at DESC, s.id DESC`
 				)
 				.all<RecentSubmissionRow>()
 		: { results: [] as RecentSubmissionRow[] };
+	// Only the references page shows citation counts; here the list feeds the
+	// reference numbering and the datalist, so the counting subqueries are skipped.
 	const references = await db
-		.prepare(
-			`SELECT r.id, r.title, r.url,
-			 (SELECT COUNT(DISTINCT submission_id) FROM submission_resources sr WHERE sr.resource_id = r.id) +
-			 (SELECT COUNT(DISTINCT search_claim_id) FROM search_claim_resources cr WHERE cr.resource_id = r.id) +
-			 (SELECT COUNT(DISTINCT category_id) FROM category_resources gr WHERE gr.resource_id = r.id) AS usage_count
-			 FROM resources r ORDER BY r.id ASC`
-		)
+		.prepare(`SELECT id, title, url FROM resources ORDER BY id ASC`)
 		.all<ResourceRow>();
 	const targetCoverage =
 		selectedCategoryRow?.format === 'target'
 			? await db
 					.prepare(
-						`SELECT CAST(json_extract(right_terms, '$[0]') AS INTEGER) AS n, COUNT(*) AS solution_count
-						 FROM submissions WHERE category_id = ?
-						 GROUP BY json_extract(right_terms, '$[0]') ORDER BY n ASC`
+						`SELECT n, solution_count FROM target_coverage
+						 WHERE category_id = ? ORDER BY n ASC`
 					)
 					.bind(selectedCategory)
 					.all<TargetCoverageRow>()

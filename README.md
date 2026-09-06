@@ -42,6 +42,11 @@ npm run check:database
 
 Valid public submissions are recomputed with exact `BigInt` arithmetic, checked for primitivity, deduplicated, and inserted automatically.
 
+Triggers maintain the derived data that keeps page loads cheap: `categories.submission_count`,
+`submissions.max_term`, canonical `discovered_at` timestamps, and the `target_coverage` table.
+Migrations only need to insert, update, or delete submissions; `npm run check:database` verifies
+that the derived data still matches.
+
 ## Quality checks
 
 ```sh
