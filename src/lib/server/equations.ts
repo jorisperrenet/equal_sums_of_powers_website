@@ -9,17 +9,20 @@ export type CategoryShape = {
 };
 
 export type ParsedEquation = {
-	left: bigint[];
-	right: bigint[];
+	left: number[];
+	right: number[];
 	equation: string;
 	powerSum: string;
 	maxTerm: number;
 };
 
 const MAX_INPUT_LENGTH = 500;
-const MAX_BASE = 1_000_000_000n;
+// Kept below 2^53 so every term is an exact JavaScript number; only the power
+// sums need BigInt.
+const MAX_TERM = 1e15;
+const SUPERSCRIPTS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
 
-function parseSide(value: string, exponent: number): bigint[] {
+function parseSide(value: string, exponent: number): number[] {
 	if (!value) throw new Error('Both sides of the equation are required.');
 
 	return value.split('+').map((raw) => {
@@ -29,38 +32,38 @@ function parseSide(value: string, exponent: number): bigint[] {
 		if (match[2] && Number(match[2]) !== exponent) {
 			throw new Error(`Every written exponent must be ${exponent}.`);
 		}
-		const number = BigInt(match[1]);
-		if (number > MAX_BASE) throw new Error('Each term must be at most 1,000,000,000.');
+		const number = Number(match[1]);
+		if (number > MAX_TERM) throw new Error('Each term must be at most 1,000,000,000,000,000.');
 		return number;
 	});
 }
 
-function descending(left: bigint, right: bigint) {
+function descending(left: number, right: number) {
 	return left > right ? -1 : left < right ? 1 : 0;
 }
 
-function compareTerms(left: bigint[], right: bigint[]) {
+function compareTerms(left: number[], right: number[]) {
 	for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
 		if (left[index] !== right[index]) return left[index] > right[index] ? 1 : -1;
 	}
 	return left.length - right.length;
 }
 
-function sorted(values: bigint[]) {
+function sorted(values: number[]) {
 	return [...values].sort(descending);
 }
 
-function sortedSigned(values: bigint[]) {
+function sortedSigned(values: number[]) {
 	return [...values].sort((left, right) => {
-		const absoluteLeft = absolute(left);
-		const absoluteRight = absolute(right);
+		const absoluteLeft = Math.abs(left);
+		const absoluteRight = Math.abs(right);
 		return absoluteLeft === absoluteRight
 			? descending(left, right)
 			: descending(absoluteLeft, absoluteRight);
 	});
 }
 
-function parseSignedSide(value: string, exponent: number): bigint[] {
+function parseSignedSide(value: string, exponent: number): number[] {
 	const normalized = value
 		.trim()
 		.replaceAll(' ', '')
@@ -73,9 +76,9 @@ function parseSignedSide(value: string, exponent: number): bigint[] {
 		if (match[2] && Number(match[2]) !== exponent) {
 			throw new Error(`Every written exponent must be ${exponent}.`);
 		}
-		const number = BigInt(match[1]);
-		if (number > MAX_BASE || number < -MAX_BASE) {
-			throw new Error('The absolute value of each term must be at most 1,000,000,000.');
+		const number = Number(match[1]);
+		if (Math.abs(number) > MAX_TERM) {
+			throw new Error('The absolute value of each term must be at most 1,000,000,000,000,000.');
 		}
 		return number;
 	});
@@ -85,39 +88,43 @@ function absolute(value: bigint) {
 	return value < 0n ? -value : value;
 }
 
-function greatestCommonDivisor(a: bigint, b: bigint) {
-	let left = absolute(a);
-	let right = absolute(b);
-	while (right !== 0n) {
+function powerSum(values: number[], exponent: number) {
+	return values.reduce((total, value) => total + BigInt(value) ** BigInt(exponent), 0n);
+}
+
+function greatestCommonDivisor(a: number, b: number) {
+	let left = Math.abs(a);
+	let right = Math.abs(b);
+	while (right !== 0) {
 		[left, right] = [right, left % right];
 	}
 	return left;
 }
 
-function requirePrimitive(values: bigint[]) {
-	const divisor = values.reduce(greatestCommonDivisor, 0n);
-	if (divisor !== 1n) {
+function requirePrimitive(values: number[]) {
+	const divisor = values.reduce(greatestCommonDivisor, 0);
+	if (divisor !== 1) {
 		throw new Error('The solution is not primitive: all bases have a common factor.');
 	}
 }
 
-function requireNoCancellation(values: bigint[]) {
+function requireNoCancellation(values: number[]) {
 	const terms = new Set(values);
-	if (values.some((value) => value !== 0n && terms.has(-value))) {
+	if (values.some((value) => value !== 0 && terms.has(-value))) {
 		throw new Error('The solution contains terms x and -x that cancel each other.');
 	}
 }
 
-function requireNoCrossSideCancellation(left: bigint[], right: bigint[]) {
-	const leftCounts = new Map<bigint, number>();
+function requireNoCrossSideCancellation(left: number[], right: number[]) {
+	const leftCounts = new Map<number, number>();
 	for (const value of left) {
-		if (value !== 0n) leftCounts.set(value, (leftCounts.get(value) ?? 0) + 1);
+		if (value !== 0) leftCounts.set(value, (leftCounts.get(value) ?? 0) + 1);
 	}
 
 	let cancellationCount = 0;
 	for (const value of right) {
 		const count = leftCounts.get(value) ?? 0;
-		if (value !== 0n && count > 0) {
+		if (value !== 0 && count > 0) {
 			cancellationCount += 1;
 			leftCounts.set(value, count - 1);
 		}
@@ -129,11 +136,11 @@ function requireNoCrossSideCancellation(left: bigint[], right: bigint[]) {
 	}
 }
 
-function formatSignedTerms(values: bigint[]) {
+function formatSignedTerms(values: number[]) {
 	return values
 		.map((value, index) => {
 			if (index === 0) return value.toString();
-			return value < 0n ? `- ${absolute(value)}` : `+ ${value}`;
+			return value < 0 ? `- ${-value}` : `+ ${value}`;
 		})
 		.join(' ');
 }
@@ -145,8 +152,10 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 	const normalized = rawInput
 		.trim()
 		.replaceAll('−', '-')
-		.replaceAll('⁷', '^7')
-		.replaceAll('⁵', '^5');
+		.replace(
+			/[⁰¹²³⁴⁵⁶⁷⁸⁹]+/g,
+			(digits) => `^${[...digits].map((digit) => SUPERSCRIPTS.indexOf(digit)).join('')}`
+		);
 	const prefix = normalized.match(/^\s*\(([^)]+)\)\s*/);
 	if (prefix) {
 		const supplied = prefix[1].replaceAll(' ', '').toUpperCase();
@@ -169,8 +178,8 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 		if (leftIsTarget === rightIsTarget) {
 			throw new Error('Put one integer N on one side and the signed power sum on the other.');
 		}
-		const target = BigInt((leftIsTarget ? parts[0] : parts[1]).trim());
-		if (target < BigInt(TARGET_MIN) || target > BigInt(TARGET_MAX)) {
+		const target = Number((leftIsTarget ? parts[0] : parts[1]).trim());
+		if (target < TARGET_MIN || target > TARGET_MAX) {
 			throw new Error(`N must be between ${TARGET_MIN} and ${TARGET_MAX}.`);
 		}
 		const signedTerms = parseSignedSide(leftIsTarget ? parts[1] : parts[0], category.exponent);
@@ -179,22 +188,16 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 		}
 		// A nonzero fixed target prevents scaling one solution into infinitely many.
 		// For N = 0, retain the primitive condition because scaling preserves the target.
-		if (target === 0n) requirePrimitive(signedTerms);
+		if (target === 0) requirePrimitive(signedTerms);
 		requireNoCancellation(signedTerms);
-		const calculated = signedTerms.reduce(
-			(total, value) => total + value ** BigInt(category.exponent),
-			0n
-		);
-		if (calculated !== target) {
-			const difference = absolute(calculated - target);
+		const calculated = powerSum(signedTerms, category.exponent);
+		if (calculated !== BigInt(target)) {
+			const difference = absolute(calculated - BigInt(target));
 			throw new Error(`Not equal — the power sum differs from N by ${difference}.`);
 		}
-		const max = signedTerms.reduce(
-			(current, value) => (absolute(value) > current ? absolute(value) : current),
-			0n
-		);
+		const max = Math.max(...signedTerms.map(Math.abs));
 		let normalizedTerms = sortedSigned(signedTerms);
-		if (target === 0n && normalizedTerms[0] < 0n) {
+		if (target === 0 && normalizedTerms[0] < 0) {
 			normalizedTerms = normalizedTerms.map((term) => -term);
 		}
 		return {
@@ -202,12 +205,12 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 			right: [target],
 			equation: `${formatSignedTerms(normalizedTerms)} = ${target}`,
 			powerSum: target.toString(),
-			maxTerm: Number(max)
+			maxTerm: max
 		};
 	}
 	if (category.format === 'near_miss') {
 		const left = parseSide(parts[0], category.exponent);
-		if (left.length !== category.left_count || left.some((term) => term === 0n)) {
+		if (left.length !== category.left_count || left.some((term) => term === 0)) {
 			throw new Error(
 				`This category needs exactly ${category.left_count} positive terms on the left.`
 			);
@@ -225,33 +228,29 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 			throw new Error(`Every written exponent must be ${category.exponent}.`);
 		}
 		const right = parseSide(rightMatch[1], category.exponent);
-		if (right.length !== category.right_count || right.some((term) => term === 0n)) {
+		if (right.length !== category.right_count || right.some((term) => term === 0)) {
 			throw new Error(
 				`This category needs exactly ${category.right_count} positive ${category.right_count === 1 ? 'term' : 'terms'} before the residual.`
 			);
 		}
 		requirePrimitive([...left, ...right]);
-		const residual = rightMatch[2] === '+' ? 1n : -1n;
-		const leftSum = left.reduce((total, value) => total + value ** BigInt(category.exponent), 0n);
-		const rightSum =
-			right.reduce((total, value) => total + value ** BigInt(category.exponent), 0n) + residual;
+		const residual = rightMatch[2] === '+' ? 1 : -1;
+		const leftSum = powerSum(left, category.exponent);
+		const rightSum = powerSum(right, category.exponent) + BigInt(residual);
 		if (leftSum !== rightSum) {
 			const difference = absolute(leftSum - rightSum);
 			throw new Error(`Not equal — the two sides differ by ${difference}.`);
 		}
 		requireNoCrossSideCancellation(left, right);
-		const max = [...left, ...right].reduce(
-			(current, value) => (value > current ? value : current),
-			0n
-		);
+		const max = Math.max(...left, ...right);
 		const normalizedLeft = sorted(left);
 		const normalizedRight = sorted(right);
 		return {
 			left: normalizedLeft,
 			right: [...normalizedRight, residual],
-			equation: `${normalizedLeft.map(String).join(' + ')} = ${normalizedRight.map(String).join(' + ')} ${residual > 0n ? '+' : '-'} 1`,
+			equation: `${normalizedLeft.map(String).join(' + ')} = ${normalizedRight.map(String).join(' + ')} ${residual > 0 ? '+' : '-'} 1`,
 			powerSum: leftSum.toString(),
-			maxTerm: Number(max)
+			maxTerm: max
 		};
 	}
 
@@ -264,10 +263,8 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 	}
 	requirePrimitive([...left, ...right]);
 
-	const sum = (values: bigint[]) =>
-		values.reduce((total, value) => total + value ** BigInt(category.exponent), 0n);
-	const leftSum = sum(left);
-	const rightSum = sum(right);
+	const leftSum = powerSum(left, category.exponent);
+	const rightSum = powerSum(right, category.exponent);
 	if (leftSum !== rightSum) {
 		const difference = leftSum > rightSum ? leftSum - rightSum : rightSum - leftSum;
 		throw new Error(`Not equal — the two power sums differ by ${difference.toString()}.`);
@@ -275,7 +272,7 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 
 	let normalizedLeft = sorted(left);
 	let normalizedRight = sorted(right);
-	if ([...left, ...right].every((term) => term === 0n)) {
+	if ([...left, ...right].every((term) => term === 0)) {
 		throw new Error('The all-zero identity is trivial and cannot be published.');
 	}
 	if (
@@ -291,14 +288,13 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 	) {
 		[normalizedLeft, normalizedRight] = [normalizedRight, normalizedLeft];
 	}
-	const allTerms = [...left, ...right];
-	const max = allTerms.reduce((current, value) => (value > current ? value : current), 0n);
+	const max = Math.max(...left, ...right);
 
 	return {
 		left: normalizedLeft,
 		right: normalizedRight,
 		equation: `${normalizedLeft.map(String).join(' + ')} = ${normalizedRight.map(String).join(' + ')}`,
 		powerSum: leftSum.toString(),
-		maxTerm: Number(max)
+		maxTerm: max
 	};
 }

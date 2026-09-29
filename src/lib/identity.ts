@@ -5,19 +5,24 @@ export type IdentityShape = {
 	format?: 'equality' | 'near_miss' | 'target';
 };
 
-function descending(left: bigint, right: bigint) {
+function descending(left: number, right: number) {
 	return left > right ? -1 : left < right ? 1 : 0;
 }
 
-function compareTerms(left: bigint[], right: bigint[]) {
+function compareTerms(left: number[], right: number[]) {
 	for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
 		if (left[index] !== right[index]) return left[index] > right[index] ? 1 : -1;
 	}
 	return left.length - right.length;
 }
 
+// Terms are capped below 2^53 on submission, so plain numbers hold them exactly.
 function parseTerms(value: string) {
-	return (JSON.parse(value) as Array<string | number>).map(BigInt);
+	return (JSON.parse(value) as Array<string | number>).map((term) => {
+		const number = Number(term);
+		if (!Number.isSafeInteger(number)) throw new Error(`Term ${term} is not a safe integer.`);
+		return number;
+	});
 }
 
 export function normalizeIdentity(leftJson: string, rightJson: string, shape: IdentityShape) {
@@ -26,17 +31,17 @@ export function normalizeIdentity(leftJson: string, rightJson: string, shape: Id
 
 	if (shape.format === 'target') {
 		left.sort((a, b) => {
-			const absoluteA = a < 0n ? -a : a;
-			const absoluteB = b < 0n ? -b : b;
+			const absoluteA = Math.abs(a);
+			const absoluteB = Math.abs(b);
 			return absoluteA === absoluteB ? descending(a, b) : descending(absoluteA, absoluteB);
 		});
-		if (right[0] === 0n && left[0] < 0n) left = left.map((term) => -term);
+		if (right[0] === 0 && left[0] < 0) left = left.map((term) => -term);
 		return { left: left.map(String), right: right.map(String), residual: null };
 	}
 
 	left.sort(descending);
 	if (shape.format === 'near_miss') {
-		const residual = right.pop() ?? 1n;
+		const residual = right.pop() ?? 1;
 		right.sort(descending);
 		return { left: left.map(String), right: right.map(String), residual: residual.toString() };
 	}
@@ -71,4 +76,13 @@ export function formatIdentity(leftJson: string, rightJson: string, shape: Ident
 		return `${left} = ${right} ${Number(identity.residual) < 0 ? '-' : '+'} 1`;
 	}
 	return `${left} = ${right}`;
+}
+
+// The canonical key stored in submissions.identity_key. Migration 0025 derives
+// the same string in SQL, so the two must change together.
+export function identityKey(leftJson: string, rightJson: string, shape: IdentityShape) {
+	const identity = normalizeIdentity(leftJson, rightJson, shape);
+	const right =
+		shape.format === 'near_miss' ? [...identity.right, identity.residual!] : identity.right;
+	return `${identity.left.join(',')}=${right.join(',')}`;
 }

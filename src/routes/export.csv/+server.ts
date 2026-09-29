@@ -1,6 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type { RequestHandler } from './$types';
 import { formatIdentity, type IdentityShape } from '$lib/identity';
+import { createQueryCache } from '$lib/server/cache';
 
 type CategoryRow = IdentityShape & {
 	id: string;
@@ -52,9 +53,11 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 			: sort === 'highest'
 				? 's.max_term ASC, s.discovered_at ASC, s.id ASC'
 				: 's.discovered_at DESC, s.id DESC';
-	const results = await db
-		.prepare(
-			`SELECT s.left_terms, s.right_terms, contributor.name AS username,
+	const cached = createQueryCache(platform, url.origin);
+	const results = await cached(`export/${category.id}/${sort}`, () =>
+		db
+			.prepare(
+				`SELECT s.left_terms, s.right_terms, contributor.name AS username,
 			 s.discovered_at, COALESCE(tool.title, s.tool_text) AS tool_name,
 			 tool.url AS tool_url
 			 FROM submissions s
@@ -63,9 +66,10 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 			   ON str.submission_id = s.id AND str.role = 'tool'
 			 LEFT JOIN resources tool ON tool.id = str.resource_id
 			 WHERE s.category_id = ? ORDER BY ${order}`
-		)
-		.bind(category.id)
-		.all<ExportRow>();
+			)
+			.bind(category.id)
+			.all<ExportRow>()
+	);
 
 	const rows = [csvRow(['Identity', 'Contributor', 'Date', 'Tools/Source'])];
 	for (const result of results.results) {

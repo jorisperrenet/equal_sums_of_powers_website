@@ -46,15 +46,23 @@
 	);
 	let exponentGroups = $derived(
 		Array.from(new Set(data.categories.map((category) => category.exponent)))
-			.sort((left, right) => right - left)
-			.map((exponent) => ({
-				exponent,
-				categories: data.categories
-					.filter((category) => category.exponent === exponent)
-					.sort(
-						(left, right) => Number(right.format === 'target') - Number(left.format === 'target')
-					)
-			}))
+			.sort((left, right) => left - right)
+			.map((exponent) => {
+				const lines = categoryLines(
+					data.categories.filter((category) => category.exponent === exponent)
+				);
+				// The contribution forms list categories in the same order as the lines.
+				const categories = lines.flatMap((line) => line.categories);
+				// The tab opens the category with the most results, else the first listed.
+				const landing = categories.reduce((best, category) =>
+					Number(category.submission_count) > Number(best.submission_count) ? category : best
+				);
+				const total = categories.reduce(
+					(sum, category) => sum + Number(category.submission_count),
+					0
+				);
+				return { exponent, categories, landing, lines, total };
+			})
 	);
 	let selectedExponentGroup = $derived(
 		exponentGroups.find((group) => group.exponent === selectedCategory?.exponent)
@@ -195,6 +203,36 @@
 		return (
 			category.notation ?? `(${category.exponent}, ${category.left_count}, ${category.right_count})`
 		);
+	}
+
+	type Category = (typeof data.categories)[number];
+
+	// One labelled line per kind of problem, so the chips can drop the exponent and
+	// read "3 vs 5". Equal sums get one line per total term count.
+	function categoryLines(categories: Category[]) {
+		const byBalance = (left: Category, right: Category) => right.left_count - left.left_count;
+		const targets = categories.filter((category) => category.format === 'target');
+		const nearMisses = categories.filter((category) => category.format === 'near_miss');
+		const equalities = categories.filter((category) => category.format === 'equality');
+		const totals = Array.from(
+			new Set(equalities.map((category) => category.left_count + category.right_count))
+		).sort((left, right) => left - right);
+		return [
+			{ label: 'Integer targets', categories: targets },
+			...totals.map((total) => ({
+				label: `Equal sums, ${total} terms`,
+				categories: equalities
+					.filter((category) => category.left_count + category.right_count === total)
+					.sort(byBalance)
+			})),
+			{ label: 'Near misses, ±1', categories: nearMisses.sort(byBalance) }
+		].filter((line) => line.categories.length);
+	}
+
+	function shortNotation(category: Category) {
+		return category.format === 'target'
+			? `${category.left_count} terms = N`
+			: `${category.left_count} vs ${category.right_count}`;
 	}
 
 	function categoryForId(id: string) {
@@ -345,42 +383,77 @@
 		</div>
 
 		<nav class="border-t border-[#ddd] bg-[#ecece8]" aria-label="Power groups">
-			<div class="mx-auto flex max-w-6xl overflow-x-auto px-4 sm:px-6">
+			<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 sm:px-6">
+				<span class="text-[13px] text-[#555]">Power</span>
+				<div class="flex border border-[#888] bg-white text-sm">
+					{#each exponentGroups as group (group.exponent)}
+						{@const current = !data.showRecent && group.exponent === selectedCategory?.exponent}
+						<a
+							href={data.categoryPaths[group.landing.id]}
+							aria-current={current ? 'page' : undefined}
+							aria-label={`${ordinal(group.exponent)} powers`}
+							title={group.total
+								? `${ordinal(group.exponent)} powers: ${group.total.toLocaleString('en-US')} verified results`
+								: `${ordinal(group.exponent)} powers: no results yet. Find the first one.`}
+							class={[
+								'min-w-9 border-r border-[#ccc] px-2.5 py-1 text-center last:border-r-0',
+								current
+									? 'bg-[#e5e5e0] font-bold text-[#202020]'
+									: group.total
+										? 'text-[#0645ad] hover:bg-[#f2f2ee] hover:underline'
+										: 'bg-[#fdf8ea] text-[#8a6508] hover:bg-[#f8efd3] hover:underline'
+							]}>{group.exponent}</a
+						>
+					{/each}
+				</div>
 				<a
 					href={resolve('/')}
-					class={data.showRecent
-						? 'border-x border-t-2 border-[#888] border-t-[#333] bg-white px-4 py-2.5 text-sm font-bold whitespace-nowrap text-[#202020]'
-						: 'border-r border-[#d0d0cb] px-4 py-2.5 text-sm whitespace-nowrap text-[#0645ad] hover:bg-[#e2e2dd] hover:underline'}
+					aria-current={data.showRecent ? 'page' : undefined}
+					class={[
+						'ml-auto text-sm whitespace-nowrap',
+						data.showRecent ? 'font-bold text-[#202020]' : 'text-[#0645ad] hover:underline'
+					]}
 				>
-					Recent Results
+					Recent results
 				</a>
-				{#each exponentGroups as group (group.exponent)}
-					<a
-						href={data.categoryPaths[group.categories[0].id]}
-						class={!data.showRecent && group.exponent === selectedCategory?.exponent
-							? 'border-x border-t-2 border-[#888] border-t-[#333] bg-white px-4 py-2.5 text-sm font-bold whitespace-nowrap text-[#202020]'
-							: 'border-r border-[#d0d0cb] px-4 py-2.5 text-sm whitespace-nowrap text-[#0645ad] hover:bg-[#e2e2dd] hover:underline'}
-					>
-						{ordinal(group.exponent)} powers
-					</a>
-				{/each}
 			</div>
 		</nav>
 		{#if !data.showRecent && selectedExponentGroup && selectedExponentGroup.categories.length > 1}
 			<nav class="border-t border-[#ddd] bg-white" aria-label="Subproblems">
-				<div
-					class="mx-auto flex max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-sm sm:px-6"
-				>
-					<span class="font-bold">{ordinal(selectedExponentGroup.exponent)}-power category:</span>
-					{#each selectedExponentGroup.categories as category (category.id)}
-						<a
-							href={data.categoryPaths[category.id]}
-							aria-current={category.id === data.selectedCategory ? 'page' : undefined}
-							class={category.id === data.selectedCategory
-								? 'border border-[#555] bg-[#e5e5e0] px-2 py-1 font-bold text-[#202020]'
-								: 'border border-[#aaa] bg-white px-2 py-1 text-[#0645ad] hover:bg-[#f2f2ee] hover:underline'}
-							>{notation(category)}</a
-						>
+				<div class="mx-auto max-w-6xl space-y-1.5 px-4 py-2 text-sm sm:px-6">
+					{#each selectedExponentGroup.lines as line (line.label)}
+						<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1.5">
+							<span class="w-full text-[13px] text-[#555] sm:w-40 sm:shrink-0">{line.label}</span>
+							{#each line.categories as category (category.id)}
+								{@const count = Number(category.submission_count)}
+								{@const current = category.id === data.selectedCategory}
+								<a
+									href={data.categoryPaths[category.id]}
+									aria-current={current ? 'page' : undefined}
+									title={count
+										? `${notation(category)}: ${count.toLocaleString('en-US')} verified ${count === 1 ? 'identity' : 'identities'}`
+										: `${notation(category)}: no identities yet. Find the first one.`}
+									class={[
+										'inline-flex items-baseline gap-1.5 border px-2 py-0.5',
+										count ? 'border-solid' : 'border-dashed',
+										current
+											? 'border-[#555] bg-[#e5e5e0] font-bold text-[#202020]'
+											: count
+												? 'border-[#aaa] bg-white text-[#0645ad] hover:bg-[#f2f2ee] hover:underline'
+												: 'border-[#b8860b] bg-[#fdf8ea] text-[#0645ad] hover:bg-[#f8efd3] hover:underline'
+									]}
+								>
+									{shortNotation(category)}
+									{#if count}
+										<span class="text-xs font-normal text-[#666]"
+											>{count.toLocaleString('en-US')}</span
+										>
+									{:else}
+										<span class="text-xs font-normal text-[#8a6508] italic">open</span>
+									{/if}
+								</a>
+							{/each}
+						</div>
 					{/each}
 				</div>
 			</nav>

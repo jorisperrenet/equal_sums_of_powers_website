@@ -45,6 +45,21 @@ const coverage = execute(
 	`SELECT category_id, n, solution_count FROM target_coverage ORDER BY category_id, n`
 );
 const claimCount = execute(`SELECT COUNT(*) AS count FROM search_claims`)[0]?.count ?? 0;
+// Derived data from migration 0025, checked only once that migration is applied.
+const hasMigration0025 =
+	execute(
+		`SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'resource_submission_counts'`
+	)[0]?.count > 0;
+const identityKeys = hasMigration0025
+	? new Map(
+			execute(`SELECT id, identity_key FROM submissions`).map((row) => [row.id, row.identity_key])
+		)
+	: new Map();
+const resourceCounts = hasMigration0025
+	? execute(`SELECT r.id, sc.submission_count,
+		 (SELECT COUNT(DISTINCT submission_id) FROM submission_resources sr WHERE sr.resource_id = r.id) AS expected
+		 FROM resources r LEFT JOIN resource_submission_counts sc ON sc.resource_id = r.id`)
+	: [];
 
 const failures = [];
 const identities = new Map();
@@ -210,7 +225,13 @@ for (const row of rows) {
 	if (requiresPrimitive && bases.reduce(gcd, 0n) !== 1n) {
 		fail(row, 'identity is not primitive');
 	}
-	const key = `${row.category_id}:${normalizedKey(row, [...left], [...right])}`;
+	const normalized = normalizedKey(row, [...left], [...right]);
+	// identity_key uses a comma, not a semicolon, before the near-miss residual.
+	const expectedIdentityKey = normalized.replace(';', ',');
+	if (hasMigration0025 && identityKeys.get(row.id) !== expectedIdentityKey) {
+		fail(row, `identity_key is ${identityKeys.get(row.id)} but should be ${expectedIdentityKey}`);
+	}
+	const key = `${row.category_id}:${normalized}`;
 	if (identities.has(key)) fail(row, `duplicates ${identities.get(key)}`);
 	else identities.set(key, row.id);
 }
@@ -241,6 +262,17 @@ for (const [key, count] of coverageRows) {
 	}
 }
 
+for (const resource of resourceCounts) {
+	if (
+		resource.submission_count === null ||
+		Number(resource.submission_count) !== resource.expected
+	) {
+		failures.push(
+			`resource_submission_counts.${resource.id}: is ${resource.submission_count ?? 'missing'} but ${resource.expected} submissions cite it`
+		);
+	}
+}
+
 if (Number(claimCount) > 20) {
 	failures.push(`search_claims: contains ${claimCount} rows; maximum is 20`);
 }
@@ -252,5 +284,5 @@ if (failures.length) {
 }
 
 console.log(
-	`Database audit passed: ${rows.length} submissions, ${categories.length} category counts, and ${coverage.length} target coverage rows checked (${remote ? 'remote' : 'local'} D1).`
+	`Database audit passed: ${rows.length} submissions, ${categories.length} category counts, ${coverage.length} target coverage rows${hasMigration0025 ? `, identity keys and ${resourceCounts.length} resource counts` : ''} checked (${remote ? 'remote' : 'local'} D1).`
 );

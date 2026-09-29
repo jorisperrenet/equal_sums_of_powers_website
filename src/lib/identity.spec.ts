@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatIdentity, normalizeIdentity } from './identity';
+import { formatIdentity, identityKey, normalizeIdentity } from './identity';
 
 describe('identity formatting', () => {
 	it('sorts both sides and gives the larger equal-length side first', () => {
@@ -44,5 +44,24 @@ describe('identity formatting', () => {
 				format: 'target'
 			})
 		).toBe('144^5 - 133^5 - 110^5 - 84^5 - 27^5 = 0');
+	});
+});
+
+describe('identity keys', () => {
+	it('orders equal-length equality sides so either input order gives one key', () => {
+		const shape = { exponent: 7, left_count: 2, right_count: 2, format: 'equality' as const };
+		expect(identityKey('[8,2]', '[1,9]', shape)).toBe('9,1=8,2');
+		expect(identityKey('[2,8]', '[9,1]', shape)).toBe('9,1=8,2');
+	});
+
+	it('keeps the near-miss residual last', () => {
+		const shape = { exponent: 5, left_count: 3, right_count: 2, format: 'near_miss' as const };
+		expect(identityKey('[3,10,5]', '[4,9,-1]', shape)).toBe('10,5,3=9,4,-1');
+	});
+
+	it('negates a zero-target solution whose leading term is negative', () => {
+		const shape = { exponent: 5, left_count: 3, right_count: 1, format: 'target' as const };
+		expect(identityKey('[3,-4,5]', '[17]', shape)).toBe('5,-4,3=17');
+		expect(identityKey('[-5,3,2]', '[0]', shape)).toBe('5,-3,-2=0');
 	});
 });

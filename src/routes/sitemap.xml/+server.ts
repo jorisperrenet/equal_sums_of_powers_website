@@ -1,16 +1,23 @@
 import type { RequestHandler } from './$types';
+import { createQueryCache } from '$lib/server/cache';
 
-export const GET: RequestHandler = async ({ platform }) => {
-	const rows = platform?.env.DB
-		? await platform.env.DB.prepare(
-				`SELECT id, exponent, submission_count
+export const GET: RequestHandler = async ({ platform, url }) => {
+	const db = platform?.env.DB;
+	const cached = createQueryCache(platform, url.origin);
+	const rows = db
+		? await cached('sitemap', () =>
+				db
+					.prepare(
+						`SELECT id, exponent, submission_count
 				 FROM categories
 				 ORDER BY exponent DESC, id`
-			).all<{
-				id: string;
-				exponent: number;
-				submission_count: number;
-			}>()
+					)
+					.all<{
+						id: string;
+						exponent: number;
+						submission_count: number;
+					}>()
+			)
 		: { results: [] };
 	const urls = [
 		'https://powersums.jorisperrenet.com/',

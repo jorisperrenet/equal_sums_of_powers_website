@@ -18,6 +18,24 @@ describe('parseAndVerify', () => {
 		expect(() => parseAndVerify('1+2+3=1+2+3', category)).toThrow(/needs 4 terms/);
 	});
 
+	it('accepts terms up to 10^15 and rejects larger ones', () => {
+		expect(() => parseAndVerify('1000000000000000+1+2+3=999999999999999+1+2+4', category)).toThrow(
+			/differ by 6999999999999979000000000000034999999999999965000000000000020999999999999992999999999985804/
+		);
+		expect(() => parseAndVerify('1000000000000001+1+2+3=1+2+3+4', category)).toThrow(
+			/at most 1,000,000,000,000,000/
+		);
+	});
+
+	it('reads superscript exponents of any length', () => {
+		const tenth = { id: '10-1-2', exponent: 10, left_count: 1, right_count: 2 };
+		expect(() => parseAndVerify('3¹⁰=2¹⁰+1¹⁰', tenth)).toThrow(/differ by/);
+		expect(() => parseAndVerify('3¹¹=2¹¹+1¹¹', tenth)).toThrow(/exponent must be 10/);
+		expect(parseAndVerify('2816⁷+2703⁷+1831⁷+1489⁷=3018⁷+2183⁷+1600⁷+274⁷', category).maxTerm).toBe(
+			3018
+		);
+	});
+
 	it('rejects a mismatched category prefix', () => {
 		expect(() =>
 			parseAndVerify('(5,4,4) 2816+2703+1831+1489=3018+2183+1600+274', category)
@@ -100,7 +118,7 @@ describe('parseAndVerify', () => {
 			format: 'target' as const
 		};
 		const result = parseAndVerify('0=-144+133+110+84+27', targetCategory);
-		expect(result.left).toEqual([144n, -133n, -110n, -84n, -27n]);
+		expect(result.left).toEqual([144, -133, -110, -84, -27]);
 		expect(result.equation).toBe('144 - 133 - 110 - 84 - 27 = 0');
 	});
 
@@ -154,7 +172,7 @@ describe('parseAndVerify', () => {
 			format: 'near_miss' as const
 		};
 		const positive = parseAndVerify('(5,4,1;±1) 645+1523+1722+2506=2615+1', nearMissCategory);
-		expect(positive.right).toEqual([2615n, 1n]);
+		expect(positive.right).toEqual([2615, 1]);
 		expect(() => parseAndVerify('1+1+1+1=1-1', nearMissCategory)).toThrow(/differ by/);
 	});
 
@@ -167,7 +185,7 @@ describe('parseAndVerify', () => {
 			format: 'near_miss' as const
 		};
 		const result = parseAndVerify('(5,3,2;±1) 38+47+123=89+118+1', nearMissCategory);
-		expect(result.right).toEqual([118n, 89n, 1n]);
+		expect(result.right).toEqual([118, 89, 1]);
 	});
 
 	it('rejects a nonzero base on both sides of a near miss but ignores the residual', () => {
@@ -180,6 +198,6 @@ describe('parseAndVerify', () => {
 		};
 		expect(() => parseAndVerify('172+1+1=172+1+1', nearMissCategory)).toThrow(/both sides/);
 		const result = parseAndVerify('38+47+123=89+118+1', nearMissCategory);
-		expect(result.right.at(-1)).toBe(1n);
+		expect(result.right.at(-1)).toBe(1);
 	});
 });

@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { normalizeIdentity } from '$lib/identity';
+import { identityKey } from '$lib/identity';
+import { createQueryCache } from '$lib/server/cache';
 import { parseAndVerify, type CategoryShape } from '$lib/server/equations';
 import { TARGET_MAX, TARGET_MIN } from '$lib/target-range';
 import type { D1Database } from '@cloudflare/workers-types';
@@ -67,6 +68,12 @@ type SearchClaimRow = {
 	created_at: string;
 };
 
+type PageStart = {
+	k: number | null;
+	discovered_at: string;
+	id: string;
+};
+
 type ResourceRow = {
 	id: number;
 	title: string;
@@ -93,7 +100,8 @@ function powerName(exponent: number, capitalized = true) {
 		7: 'seventh',
 		8: 'eighth',
 		9: 'ninth',
-		10: 'tenth'
+		10: 'tenth',
+		11: 'eleventh'
 	};
 	const name =
 		names[exponent] ??
@@ -161,17 +169,8 @@ function validateHttpUrl(value: string) {
 	return null;
 }
 
-function serializeTerms(values: bigint[]) {
+function serializeTerms(values: number[]) {
 	return `[${values.join(',')}]`;
-}
-
-function identityKey(leftTerms: string, rightTerms: string, category: CategoryShape) {
-	const normalized = normalizeIdentity(leftTerms, rightTerms, category);
-	const right =
-		category.format === 'near_miss'
-			? [...normalized.right, normalized.residual!]
-			: normalized.right;
-	return `${JSON.stringify(normalized.left)}=${JSON.stringify(right)}`;
 }
 
 // `submission_count` is maintained by triggers (migration 0023), so this reads
@@ -231,7 +230,10 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 		};
 	}
 
-	const categories = await getCategories(db);
+	// Shared pieces (categories, references, the home lists) are cached apart
+	// from each table page, so they stay warm across every URL of the site.
+	const cached = createQueryCache(platform, url.origin);
+	const categories = await cached('categories', () => getCategories(db));
 	if (requested && !categories.some((category) => category.id === requested)) {
 		error(404, 'Unknown power-sum category');
 	}
@@ -274,37 +276,83 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	// Each ordering matches an index on submissions exactly, including the id
 	// tie-breaker, so only the requested page is read. `max_term` and the
 	// canonical timestamps are maintained by triggers (migration 0023). The
-	// page is selected from the bare table first so that skipped rows cost an
-	// index entry each rather than a full set of joins.
+	// page is selected from the bare table first so that joins run only for the
+	// rows shown.
 	const submissionOrder = (prefix: string) =>
 		sort === 'n'
 			? `CAST(json_extract(${prefix}right_terms, '$[0]') AS INTEGER) ASC, ${prefix}discovered_at ASC, ${prefix}id ASC`
 			: sort === 'highest'
 				? `${prefix}max_term ASC, ${prefix}discovered_at ASC, ${prefix}id ASC`
 				: `${prefix}discovered_at DESC, ${prefix}id DESC`;
+	// Pages after the first start from a cached list of each page's first sort
+	// key, so a deep page seeks straight to its rows instead of stepping over
+	// every earlier one with OFFSET. Building the list reads the category's
+	// index once per data version; every page of that version then costs about
+	// as much as the first. Row values seek the plain-column indexes directly,
+	// but SQLite cannot match one to the expression index behind N, so that
+	// comparison is spelled out; it then scans only rows sharing the page's N.
+	const leadingKey =
+		sort === 'n'
+			? "CAST(json_extract(right_terms, '$[0]') AS INTEGER)"
+			: sort === 'highest'
+				? 'max_term'
+				: null;
+	const startCondition =
+		sort === 'n'
+			? `${leadingKey} >= ? AND (${leadingKey} > ? OR (discovered_at, id) >= (?, ?))`
+			: sort === 'highest'
+				? '(max_term, discovered_at, id) >= (?, ?, ?)'
+				: '(discovered_at, id) <= (?, ?)';
+	const startBindings = (start: PageStart) =>
+		sort === 'n'
+			? [start.k, start.k, start.discovered_at, start.id]
+			: sort === 'highest'
+				? [start.k, start.discovered_at, start.id]
+				: [start.discovered_at, start.id];
+	const pageStarts = () =>
+		cached(`page-starts/${selectedCategory}/${sort}`, async () => {
+			const keys = await db
+				.prepare(
+					`SELECT ${leadingKey ?? 'NULL'} AS k, discovered_at, id FROM submissions
+					 WHERE category_id = ? ORDER BY ${submissionOrder('')}`
+				)
+				.bind(selectedCategory)
+				.all<PageStart>();
+			return keys.results.filter((_, index) => index % pageSize === 0);
+		});
+	const loadPage = async () => {
+		const start = page > 1 ? (await pageStarts())[page - 1] : undefined;
+		const [selection, bindings] = start
+			? [
+					`AND ${startCondition} ORDER BY ${submissionOrder('')} LIMIT ?`,
+					[...startBindings(start), pageSize]
+				]
+			: [`ORDER BY ${submissionOrder('')} LIMIT ? OFFSET ?`, [pageSize, (page - 1) * pageSize]];
+		return db
+			.prepare(
+				`SELECT s.id, s.category_id, contributor.name AS username, s.left_terms, s.right_terms,
+				 COALESCE(tool.title, s.tool_text) AS tool_name,
+				 tool.url AS tool_url,
+				 tool.id AS tool_reference_id,
+				 s.discovered_at AS created_at
+				 FROM (SELECT * FROM submissions WHERE category_id = ? ${selection}) s
+				 JOIN contributors contributor ON contributor.id = s.contributor_id
+				 LEFT JOIN submission_resources str ON str.submission_id = s.id AND str.role = 'tool'
+				 LEFT JOIN resources tool ON tool.id = str.resource_id
+				 ORDER BY ${submissionOrder('s.')}`
+			)
+			.bind(selectedCategory, ...bindings)
+			.all<SubmissionRow>();
+	};
 	// The recent-results view never renders the leaderboard table.
 	const submissions = showRecent
 		? { results: [] as SubmissionRow[] }
-		: await db
-				.prepare(
-					`SELECT s.id, s.category_id, contributor.name AS username, s.left_terms, s.right_terms,
-					 COALESCE(tool.title, s.tool_text) AS tool_name,
-					 tool.url AS tool_url,
-					 tool.id AS tool_reference_id,
-					 s.discovered_at AS created_at
-					 FROM (SELECT * FROM submissions WHERE category_id = ?
-					       ORDER BY ${submissionOrder('')} LIMIT ? OFFSET ?) s
-					 JOIN contributors contributor ON contributor.id = s.contributor_id
-					 LEFT JOIN submission_resources str ON str.submission_id = s.id AND str.role = 'tool'
-					 LEFT JOIN resources tool ON tool.id = str.resource_id
-					 ORDER BY ${submissionOrder('s.')}`
-				)
-				.bind(selectedCategory, pageSize, (page - 1) * pageSize)
-				.all<SubmissionRow>();
+		: await cached(`table/${selectedCategory}/${sort}/${page}`, loadPage);
 	const searchClaims = showRecent
-		? await db
-				.prepare(
-					`SELECT c.id, c.category_id, contributor.name AS username, c.lower_radius, c.upper_radius, c.search_type,
+		? await cached('home/search-claims', () =>
+				db
+					.prepare(
+						`SELECT c.id, c.category_id, contributor.name AS username, c.lower_radius, c.upper_radius, c.search_type,
 					 COALESCE(r.title, c.tool_text, '') AS tool_name, r.url AS tool_url,
 					 r.id AS tool_reference_id, c.comment, c.created_at
 					 FROM search_claims c
@@ -312,13 +360,15 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 					 LEFT JOIN search_claim_resources cr ON cr.search_claim_id = c.id
 					 LEFT JOIN resources r ON r.id = cr.resource_id
 						 ORDER BY c.created_at DESC LIMIT 20`
-				)
-				.all<SearchClaimRow>()
+					)
+					.all<SearchClaimRow>()
+			)
 		: { results: [] as SearchClaimRow[] };
 	const recentResults = showRecent
-		? await db
-				.prepare(
-					`SELECT s.id, s.category_id, contributor.name AS username,
+		? await cached('home/recent', () =>
+				db
+					.prepare(
+						`SELECT s.id, s.category_id, contributor.name AS username,
 					 s.left_terms, s.right_terms,
 					 COALESCE(tool.title, s.tool_text) AS tool_name,
 					 tool.url AS tool_url, tool.id AS tool_reference_id,
@@ -333,23 +383,26 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 					   ON str.submission_id = s.id AND str.role = 'tool'
 					 LEFT JOIN resources tool ON tool.id = str.resource_id
 					 ORDER BY s.discovered_at DESC, s.id DESC`
-				)
-				.all<RecentSubmissionRow>()
+					)
+					.all<RecentSubmissionRow>()
+			)
 		: { results: [] as RecentSubmissionRow[] };
 	// Only the references page shows citation counts; here the list feeds the
 	// reference numbering and the datalist, so the counting subqueries are skipped.
-	const references = await db
-		.prepare(`SELECT id, title, url FROM resources ORDER BY id ASC`)
-		.all<ResourceRow>();
+	const references = await cached('references', () =>
+		db.prepare(`SELECT id, title, url FROM resources ORDER BY id ASC`).all<ResourceRow>()
+	);
 	const targetCoverage =
 		selectedCategoryRow?.format === 'target'
-			? await db
-					.prepare(
-						`SELECT n, solution_count FROM target_coverage
+			? await cached(`coverage/${selectedCategory}`, () =>
+					db
+						.prepare(
+							`SELECT n, solution_count FROM target_coverage
 						 WHERE category_id = ? ORDER BY n ASC`
-					)
-					.bind(selectedCategory)
-					.all<TargetCoverageRow>()
+						)
+						.bind(selectedCategory)
+						.all<TargetCoverageRow>()
+				)
 			: { results: [] as TargetCoverageRow[] };
 	const total = categories.reduce((sum, category) => sum + Number(category.submission_count), 0);
 	const heading = selectedCategoryRow ? categoryHeading(selectedCategoryRow) : '';
@@ -504,8 +557,8 @@ export const actions: Actions = {
 			});
 
 		const verifiedResults: Array<{
-			left: bigint[];
-			right: bigint[];
+			left: number[];
+			right: number[];
 			serializedLeft: string;
 			serializedRight: string;
 			key: string;
@@ -538,13 +591,21 @@ export const actions: Actions = {
 				firstSkippedReason ||= `Line ${index + 1}: ${reason}`;
 			}
 		}
-		const existing = await db
-			.prepare('SELECT left_terms, right_terms FROM submissions WHERE category_id = ?')
-			.bind(category.id)
-			.all<{ left_terms: string; right_terms: string }>();
-		const existingKeys = new Set(
-			existing.results.map((result) => identityKey(result.left_terms, result.right_terms, category))
-		);
+		// One index lookup per line on submissions_by_category_identity (migration
+		// 0025), in chunks that stay under D1's limit of 100 bound parameters.
+		const candidateKeys = verifiedResults.map((result) => result.key);
+		const existingKeys = new Set<string>();
+		for (let start = 0; start < candidateKeys.length; start += 90) {
+			const chunk = candidateKeys.slice(start, start + 90);
+			const existing = await db
+				.prepare(
+					`SELECT identity_key FROM submissions
+					 WHERE category_id = ? AND identity_key IN (${chunk.map(() => '?').join(', ')})`
+				)
+				.bind(category.id, ...chunk)
+				.all<{ identity_key: string }>();
+			for (const result of existing.results) existingKeys.add(result.identity_key);
+		}
 		const newResults = verifiedResults.filter((result) => {
 			if (!existingKeys.has(result.key)) return true;
 			skippedCount++;
