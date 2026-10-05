@@ -261,6 +261,12 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 			`This category needs ${category.left_count} terms on the left and ${category.right_count} on the right.`
 		);
 	}
+	// A zero base would make this a padded solution of a smaller category.
+	if ([...left, ...right].some((term) => term === 0)) {
+		throw new Error(
+			'Every term must be positive; a zero term makes this a solution of a smaller category.'
+		);
+	}
 	requirePrimitive([...left, ...right]);
 
 	const leftSum = powerSum(left, category.exponent);
@@ -272,9 +278,6 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 
 	let normalizedLeft = sorted(left);
 	let normalizedRight = sorted(right);
-	if ([...left, ...right].every((term) => term === 0)) {
-		throw new Error('The all-zero identity is trivial and cannot be published.');
-	}
 	if (
 		category.left_count === category.right_count &&
 		compareTerms(normalizedLeft, normalizedRight) === 0

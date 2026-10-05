@@ -48,23 +48,27 @@ describe('parseAndVerify', () => {
 
 	it('rejects nonzero bases that occur on both sides, including repeated occurrences', () => {
 		const unequalCategory = {
-			id: '5-3-2',
-			exponent: 5,
-			left_count: 3,
-			right_count: 2
+			id: '3-4-4',
+			exponent: 3,
+			left_count: 4,
+			right_count: 4
 		};
-		expect(() => parseAndVerify('1+1+0=1+1', unequalCategory)).toThrow(/both sides/);
+		expect(() => parseAndVerify('1+12+5+5=9+10+5+5', unequalCategory)).toThrow(/both sides/);
 	});
 
-	it('does not treat zero padding on both sides as cancellation', () => {
-		const unequalCategory = {
-			id: '3-3-3',
-			exponent: 3,
-			left_count: 3,
-			right_count: 3
+	it('rejects zero terms that pad a solution of a smaller category', () => {
+		const paddedCategory = {
+			id: '8-4-5',
+			exponent: 8,
+			left_count: 4,
+			right_count: 5
 		};
-		const result = parseAndVerify('1+12+0=9+10+0', unequalCategory);
-		expect(result.powerSum).toBe('1729');
+		expect(() =>
+			parseAndVerify('3113+2012+1953+861=2823+2767+2557+1128+0', paddedCategory)
+		).toThrow(/positive/);
+		expect(() =>
+			parseAndVerify('1+12+0=9+10+0', { id: '3-3-3', exponent: 3, left_count: 3, right_count: 3 })
+		).toThrow(/positive/);
 	});
 
 	it('rejects a valid but non-primitive scaled identity', () => {

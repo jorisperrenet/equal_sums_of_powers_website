@@ -210,7 +210,7 @@ for (const row of rows) {
 			fail(row, `expected ${row.left_count} left and ${row.right_count} right terms`);
 		}
 		bases = [...left, ...right];
-		if (bases.some((value) => value < 0n)) fail(row, 'equal-sum bases must be non-negative');
+		if (bases.some((value) => value <= 0n)) fail(row, 'equal-sum bases must be positive');
 		if (hasNonzeroCrossSideCancellation(left, right)) {
 			fail(row, 'equal sum contains a nonzero base on both sides');
 		}
