@@ -268,13 +268,26 @@
 		return `${left} = ${right}`;
 	}
 
-	function resultPageHref(page: number) {
-		const base = data.categoryPaths[data.selectedCategory];
+	// Links within the selected category, keeping the family filter unless one is given.
+	function categoryHref({
+		page = 1,
+		sort = data.sort === 'date' ? 'date' : null,
+		family = data.familyFilter
+	}: {
+		page?: number;
+		sort?: 'date' | null;
+		family?: string | null;
+	} = {}) {
 		const parameters = [
-			data.sort === 'date' ? 'sort=date' : '',
+			family ? `k=${encodeURIComponent(family)}` : '',
+			sort ? `sort=${sort}` : '',
 			page > 1 ? `page=${page}` : ''
 		].filter(Boolean);
-		return `${base}${parameters.length ? `?${parameters.join('&')}` : ''}`;
+		return `${data.categoryPaths[data.selectedCategory]}${parameters.length ? `?${parameters.join('&')}` : ''}`;
+	}
+
+	function resultPageHref(page: number) {
+		return categoryHref({ page });
 	}
 
 	function paginationPages(current: number, total: number): Array<number | null> {
@@ -591,7 +604,11 @@
 							<p class="mt-1 text-sm text-[#555]">
 								{data.selectedCount} machine-verified {selectedCategory?.format === 'target'
 									? 'solutions'
-									: 'identities'}, ordered by {data.sort === 'n'
+									: 'identities'}{data.familyFilter === 'all'
+									? ' in elliptic families'
+									: data.familyFilter
+										? ` with k = ${data.familyFilter}`
+										: ''}, ordered by {data.sort === 'n'
 									? 'integer target'
 									: data.sort === 'highest'
 										? 'highest term'
@@ -600,7 +617,9 @@
 						</div>
 						<div class="flex items-center gap-3 text-sm">
 							<a
-								href={resolve(`/export.csv?category=${data.selectedCategory}&sort=${data.sort}`)}
+								href={resolve(
+									`/export.csv?category=${data.selectedCategory}&sort=${data.sort}${data.familyFilter ? `&k=${encodeURIComponent(data.familyFilter)}` : ''}`
+								)}
 								rel="nofollow"
 								class="border border-[#888] bg-white px-2 py-1 text-[#0645ad] hover:bg-[#f0f0ec] hover:underline"
 								>Export CSV</a
@@ -611,7 +630,7 @@
 				<nav class="mt-3 text-sm" aria-label="Result sorting">
 					<span class="font-bold">Sort by:</span>
 					<a
-						href={data.categoryPaths[data.selectedCategory]}
+						href={resolve(categoryHref({ sort: null }) as ArchiveHref)}
 						class={data.sort !== 'date'
 							? 'ml-2 font-bold text-[#202020]'
 							: 'ml-2 text-[#0645ad] hover:underline'}
@@ -619,7 +638,7 @@
 					>
 					<span class="px-1 text-[#888]">|</span>
 					<a
-						href={resolve(`${data.categoryPaths[data.selectedCategory]}?sort=date` as ArchiveHref)}
+						href={resolve(categoryHref({ sort: 'date' }) as ArchiveHref)}
 						rel="nofollow"
 						class={data.sort === 'date'
 							? 'font-bold text-[#202020]'
@@ -661,12 +680,89 @@
 					</div>
 				{/if}
 
+				{#if data.families.length}
+					{@const familyCount = data.families.reduce(
+						(sum, family) => sum + Number(family.solution_count),
+						0
+					)}
+					<div class="mt-4 border border-[#aaa] bg-white p-4">
+						<p class="text-sm">
+							A solution with <strong>e = a + k³(b + c + d)</strong> for a rational <i>k</i>, after
+							reordering the terms and choosing their signs, lies on an elliptic curve that yields
+							infinitely many more. For <i>k</i> = 1 this is the Jacobi–Madden equation (2008); the
+							generalization to rational <i>k</i> dates from 2026.
+							{familyCount} of {selectedCategory?.submission_count} recorded solutions belong to such
+							a family, for {data.families.length} values of <i>k</i>.
+						</p>
+						<!-- Filtering only matters once the category also holds solutions outside every family. -->
+						{#if familyCount < Number(selectedCategory?.submission_count ?? 0) || data.familyFilter !== null}
+							<nav class="mt-3 text-sm" aria-label="Family filter">
+								<span class="font-bold">Show:</span>
+								<a
+									href={resolve(categoryHref({ family: null }) as ArchiveHref)}
+									class={data.familyFilter === null
+										? 'ml-2 font-bold text-[#202020]'
+										: 'ml-2 text-[#0645ad] hover:underline'}>All solutions</a
+								>
+								<span class="px-1 text-[#888]">|</span>
+								<a
+									href={resolve(categoryHref({ family: 'all' }) as ArchiveHref)}
+									class={data.familyFilter === 'all'
+										? 'font-bold text-[#202020]'
+										: 'text-[#0645ad] hover:underline'}>Elliptic families only</a
+								>
+							</nav>
+						{/if}
+						<details class="mt-3" open={data.familyFilter !== null}>
+							<summary class="cursor-pointer text-sm font-bold text-[#0645ad] hover:underline"
+								>Show the table of k values</summary
+							>
+							<div class="mt-2 max-h-[32rem] overflow-auto border border-[#bbb]">
+								<table class="w-full border-collapse text-sm">
+									<thead>
+										<tr class="border-b border-[#888] bg-[#e5e5e0] text-left">
+											<th class="border-r border-[#bbb] px-2 py-1 font-bold">k</th>
+											<th class="border-r border-[#bbb] px-2 py-1 text-right font-bold"
+												>Solutions</th
+											>
+											<th class="px-2 py-1 font-bold">Smallest e</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each data.families as family (family.k)}
+											<tr class="border-b border-[#ddd] last:border-b-0 even:bg-[#f7f7f4]">
+												<td class="border-r border-[#ddd] px-2 py-1 whitespace-nowrap">
+													{#if data.familyFilter === family.k}
+														<strong>{family.k}</strong>
+													{:else}
+														<a
+															href={resolve(categoryHref({ family: family.k }) as ArchiveHref)}
+															class="text-[#0645ad] hover:underline">{family.k}</a
+														>
+													{/if}
+												</td>
+												<td class="border-r border-[#ddd] px-2 py-1 text-right"
+													>{family.solution_count}</td
+												>
+												<td class="px-2 py-1 font-serif break-all">{family.smallest_e}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						</details>
+					</div>
+				{/if}
+
 				{#if data.submissions.length}
 					<div class="mt-4 overflow-x-auto border border-[#aaa] bg-white">
 						<table class="w-full min-w-[850px] border-collapse text-sm">
 							<thead>
 								<tr class="border-b border-[#888] bg-[#e5e5e0] text-left">
 									<th class="border-r border-[#bbb] px-2 py-1.5 font-bold">Identity</th>
+									{#if data.families.length}
+										<th class="w-20 border-r border-[#bbb] px-2 py-1.5 font-bold">k</th>
+									{/if}
 									<th class="w-40 border-r border-[#bbb] px-2 py-1.5 font-bold">Contributor</th>
 									<th class="w-32 border-r border-[#bbb] px-2 py-1.5 font-bold">Date</th>
 									<th class="w-64 px-2 py-1.5 font-bold">Tools</th>
@@ -714,6 +810,11 @@
 												{/each}
 											{/if}
 										</td>
+										{#if data.families.length}
+											<td class="border-r border-[#ddd] px-2 py-2 whitespace-nowrap"
+												>{submission.family_k?.replaceAll(',', ', ') ?? ''}</td
+											>
+										{/if}
 										<td class="border-r border-[#ddd] px-2 py-2">{submission.username}</td>
 										<td class="border-r border-[#ddd] px-2 py-2 whitespace-nowrap"
 											>{formatDate(submission.created_at)}</td

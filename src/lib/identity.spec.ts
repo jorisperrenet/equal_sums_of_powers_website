@@ -59,6 +59,19 @@ describe('identity keys', () => {
 		expect(identityKey('[3,10,5]', '[4,9,-1]', shape)).toBe('10,5,3=9,4,-1');
 	});
 
+	it('reads terms above 2^53 from their stored digit strings', () => {
+		const shape = { exponent: 4, left_count: 1, right_count: 4, format: 'equality' as const };
+		expect(
+			identityKey(
+				'["12292097156855559"]',
+				'[1614992954535620,"12274697774246895",3270153571474390,1672559999547434]',
+				shape
+			)
+		).toBe(
+			'12292097156855559=12274697774246895,3270153571474390,1672559999547434,1614992954535620'
+		);
+	});
+
 	it('negates a zero-target solution whose leading term is negative', () => {
 		const shape = { exponent: 5, left_count: 3, right_count: 1, format: 'target' as const };
 		expect(identityKey('[3,-4,5]', '[17]', shape)).toBe('5,-4,3=17');

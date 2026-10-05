@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type { RequestHandler } from './$types';
+import { ELLIPTIC_FAMILY_CATEGORY } from '$lib/elliptic-family';
 import { formatIdentity, type IdentityShape } from '$lib/identity';
 import { createQueryCache } from '$lib/server/cache';
 
@@ -15,6 +16,7 @@ type ExportRow = {
 	discovered_at: string;
 	tool_name: string | null;
 	tool_url: string | null;
+	family_k: string | null;
 };
 
 function csvCell(value: string) {
@@ -53,25 +55,40 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 			: sort === 'highest'
 				? 's.max_term ASC, s.discovered_at ASC, s.id ASC'
 				: 's.discovered_at DESC, s.id DESC';
+	// Like the leaderboard, ?k=all keeps the elliptic families and ?k=n/m one of them.
+	const hasFamilies = category.id === ELLIPTIC_FAMILY_CATEGORY;
+	const requestedFamily = url.searchParams.get('k');
+	const family =
+		hasFamilies && requestedFamily && /^(all|\d+(\/\d+)?)$/.test(requestedFamily)
+			? requestedFamily
+			: null;
+	const [familyCondition, familyBindings] =
+		family === null
+			? ['', []]
+			: family === 'all'
+				? ['AND s.family_k IS NOT NULL', []]
+				: ['AND s.family_k IS NOT NULL AND s.family_k = ?', [family]];
 	const cached = createQueryCache(platform, url.origin);
-	const results = await cached(`export/${category.id}/${sort}`, () =>
+	const results = await cached(`export/${category.id}/${sort}${family ? `/k=${family}` : ''}`, () =>
 		db
 			.prepare(
 				`SELECT s.left_terms, s.right_terms, contributor.name AS username,
 			 s.discovered_at, COALESCE(tool.title, s.tool_text) AS tool_name,
-			 tool.url AS tool_url
+			 tool.url AS tool_url, s.family_k
 			 FROM submissions s
 			 JOIN contributors contributor ON contributor.id = s.contributor_id
 			 LEFT JOIN submission_resources str
 			   ON str.submission_id = s.id AND str.role = 'tool'
 			 LEFT JOIN resources tool ON tool.id = str.resource_id
-			 WHERE s.category_id = ? ORDER BY ${order}`
+			 WHERE s.category_id = ? ${familyCondition} ORDER BY ${order}`
 			)
-			.bind(category.id)
+			.bind(category.id, ...familyBindings)
 			.all<ExportRow>()
 	);
 
-	const rows = [csvRow(['Identity', 'Contributor', 'Date', 'Tools/Source'])];
+	const rows = [
+		csvRow(['Identity', ...(hasFamilies ? ['k'] : []), 'Contributor', 'Date', 'Tools/Source'])
+	];
 	for (const result of results.results) {
 		const tool = result.tool_url
 			? `${result.tool_name || 'Tool / source'} — ${result.tool_url}`
@@ -79,6 +96,7 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 		rows.push(
 			csvRow([
 				formatIdentity(result.left_terms, result.right_terms, category),
+				...(hasFamilies ? [result.family_k ?? ''] : []),
 				result.username,
 				dateOnly(result.discovered_at),
 				tool
@@ -89,7 +107,7 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 	return new Response(`${rows.join('\r\n')}\r\n`, {
 		headers: {
 			'content-type': 'text/csv; charset=utf-8',
-			'content-disposition': `attachment; filename="${category.id}-leaderboard.csv"`,
+			'content-disposition': `attachment; filename="${category.id}${family ? `-k-${family.replace('/', '-')}` : ''}-leaderboard.csv"`,
 			'cache-control': 'public, max-age=300'
 		}
 	});

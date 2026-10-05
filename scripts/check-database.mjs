@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ELLIPTIC_FAMILY_CATEGORY, ellipticFamilyK } from '../src/lib/elliptic-family.ts';
+import { parseStoredTerms } from '../src/lib/terms.ts';
 
 const wrangler = fileURLToPath(
 	new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url)
@@ -50,6 +52,14 @@ const hasMigration0025 =
 	execute(
 		`SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name = 'resource_submission_counts'`
 	)[0]?.count > 0;
+// The family_k column from migration 0030.
+const hasMigration0030 =
+	execute(
+		`SELECT COUNT(*) AS count FROM pragma_table_info('submissions') WHERE name = 'family_k'`
+	)[0]?.count > 0;
+const familyKs = hasMigration0030
+	? new Map(execute(`SELECT id, family_k FROM submissions`).map((row) => [row.id, row.family_k]))
+	: new Map();
 const identityKeys = hasMigration0025
 	? new Map(
 			execute(`SELECT id, identity_key FROM submissions`).map((row) => [row.id, row.identity_key])
@@ -70,19 +80,22 @@ function fail(row, message) {
 	failures.push(`${row.id}: ${message}`);
 }
 
+// Safe integers as JSON numbers, larger ones as JSON strings of their digits.
 function parseTerms(row, column) {
-	let values;
 	try {
-		values = JSON.parse(row[column]);
-	} catch {
-		fail(row, `${column} is not valid JSON`);
+		return parseStoredTerms(row[column]);
+	} catch (error) {
+		fail(row, `${column}: ${error.message}`);
 		return [];
 	}
-	if (!Array.isArray(values) || values.some((value) => !Number.isSafeInteger(value))) {
-		fail(row, `${column} must be an array of JSON integers, not strings`);
-		return [];
-	}
-	return values.map(BigInt);
+}
+
+// The sort key stored in max_term (migration 0030): the integer itself while
+// it fits a JavaScript number, otherwise 'LLL:digits'.
+function maxTermKey(value) {
+	if (value <= BigInt(Number.MAX_SAFE_INTEGER)) return Number(value);
+	const digits = value.toString();
+	return `${String(digits.length).padStart(3, '0')}:${digits}`;
 }
 
 function absolute(value) {
@@ -160,8 +173,15 @@ for (const row of rows) {
 		(largest, value) => (absolute(value) > largest ? absolute(value) : largest),
 		0n
 	);
-	if (row.max_term === null || BigInt(row.max_term) !== expectedMaxTerm) {
-		fail(row, `max_term is ${row.max_term} but the largest absolute term is ${expectedMaxTerm}`);
+	if (row.max_term !== maxTermKey(expectedMaxTerm)) {
+		fail(row, `max_term is ${row.max_term} but should be ${maxTermKey(expectedMaxTerm)}`);
+	}
+	if (hasMigration0030) {
+		const expectedFamilyK =
+			row.category_id === ELLIPTIC_FAMILY_CATEGORY ? ellipticFamilyK(left[0], right) : null;
+		if (familyKs.get(row.id) !== expectedFamilyK) {
+			fail(row, `family_k is ${familyKs.get(row.id)} but should be ${expectedFamilyK}`);
+		}
 	}
 
 	let bases;
@@ -284,5 +304,5 @@ if (failures.length) {
 }
 
 console.log(
-	`Database audit passed: ${rows.length} submissions, ${categories.length} category counts, ${coverage.length} target coverage rows${hasMigration0025 ? `, identity keys and ${resourceCounts.length} resource counts` : ''} checked (${remote ? 'remote' : 'local'} D1).`
+	`Database audit passed: ${rows.length} submissions, ${categories.length} category counts, ${coverage.length} target coverage rows${hasMigration0025 ? `, identity keys and ${resourceCounts.length} resource counts` : ''}${hasMigration0030 ? ', family k' : ''} checked (${remote ? 'remote' : 'local'} D1).`
 );

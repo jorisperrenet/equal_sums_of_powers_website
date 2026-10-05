@@ -1,9 +1,11 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+import { ELLIPTIC_FAMILY_CATEGORY, ellipticFamilyK } from '$lib/elliptic-family';
 import { identityKey } from '$lib/identity';
 import { createQueryCache } from '$lib/server/cache';
 import { parseAndVerify, type CategoryShape } from '$lib/server/equations';
 import { TARGET_MAX, TARGET_MIN } from '$lib/target-range';
+import { serializeTerms } from '$lib/terms';
 import type { D1Database } from '@cloudflare/workers-types';
 import katex from 'katex';
 
@@ -44,6 +46,7 @@ type SubmissionRow = {
 	tool_url: string | null;
 	tool_reference_id: number | null;
 	created_at: string;
+	family_k: string | null;
 };
 
 type RecentSubmissionRow = SubmissionRow & {
@@ -69,7 +72,7 @@ type SearchClaimRow = {
 };
 
 type PageStart = {
-	k: number | null;
+	k: number | string | null;
 	discovered_at: string;
 	id: string;
 };
@@ -84,6 +87,22 @@ type TargetCoverageRow = {
 	n: number;
 	solution_count: number;
 };
+
+type FamilyRow = {
+	k: string;
+	solution_count: number;
+	smallest_e: string;
+};
+
+// max_term holds an integer, or 'LLL:digits' once it exceeds 2^53 (migration 0030).
+function maxTermDigits(value: number | string) {
+	return typeof value === 'number' ? value.toString() : value.slice(value.indexOf(':') + 1);
+}
+
+function familyValue(k: string) {
+	const [n, m = '1'] = k.split(',')[0].split('/');
+	return Number(n) / Number(m);
+}
 
 function categoryPath(category: Pick<CategoryRow, 'id' | 'exponent'>) {
 	return `/${category.exponent}${category.exponent === 1 ? 'st' : category.exponent === 2 ? 'nd' : category.exponent === 3 ? 'rd' : 'th'}-powers/${category.id}/`;
@@ -169,10 +188,6 @@ function validateHttpUrl(value: string) {
 	return null;
 }
 
-function serializeTerms(values: number[]) {
-	return `[${values.join(',')}]`;
-}
-
 // `submission_count` is maintained by triggers (migration 0023), so this reads
 // one row per category plus one indexed row for each example instead of
 // touching every submission on every request.
@@ -211,6 +226,8 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 			recentResults: [],
 			references: [],
 			targetCoverage: [],
+			families: [] as FamilyRow[],
+			familyFilter: null as string | null,
 			selectedCategory: '7-4-4',
 			showRecent,
 			notationFormulas,
@@ -249,25 +266,62 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	const requestedSort = url.searchParams.get('sort');
 	const sort =
 		requestedSort === 'date' ? 'date' : selectedCategoryRow?.format === 'target' ? 'n' : 'highest';
+	// The elliptic-curve families of (4, 1, 4), one row per k, read through the
+	// partial index of migration 0030 so they never touch the rest of the category.
+	const families =
+		selectedCategory === ELLIPTIC_FAMILY_CATEGORY && !showRecent
+			? await cached(`families/${selectedCategory}`, async () => {
+					const result = await db
+						.prepare(
+							`SELECT family_k AS k, COUNT(*) AS solution_count, MIN(max_term) AS smallest
+							 FROM submissions WHERE category_id = ? AND family_k IS NOT NULL
+							 GROUP BY family_k`
+						)
+						.bind(selectedCategory)
+						.all<{ k: string; solution_count: number; smallest: number | string }>();
+					return result.results
+						.map(({ k, solution_count, smallest }) => ({
+							k,
+							solution_count,
+							smallest_e: maxTermDigits(smallest)
+						}))
+						.sort((left, right) => familyValue(left.k) - familyValue(right.k));
+				})
+			: [];
+	// ?k=all lists every family solution, ?k=n/m one family; anything else is dropped.
+	const requestedFamily = url.searchParams.get('k');
+	const familyFilter =
+		requestedFamily === 'all' || families.some((family) => family.k === requestedFamily)
+			? requestedFamily
+			: null;
+	const filteredCount =
+		familyFilter === null
+			? selectedCount
+			: families
+					.filter((family) => familyFilter === 'all' || family.k === familyFilter)
+					.reduce((sum, family) => sum + family.solution_count, 0);
 	const requestedPage = Number.parseInt(url.searchParams.get('page') ?? '1', 10);
-	const lastPage = Math.max(1, Math.ceil(selectedCount / pageSize));
+	const lastPage = Math.max(1, Math.ceil(filteredCount / pageSize));
 	const page = Number.isSafeInteger(requestedPage)
 		? Math.min(Math.max(requestedPage, 1), lastPage)
 		: 1;
 	if (selectedCategoryRow && requested) {
 		const canonicalPath = categoryPath(selectedCategoryRow);
 		const normalized = new URLSearchParams();
+		if (familyFilter) normalized.set('k', familyFilter);
 		if (requestedSort === 'date') normalized.set('sort', 'date');
 		if (page > 1) normalized.set('page', String(page));
 		const normalizedUrl = `${canonicalPath}${normalized.size ? `?${normalized}` : ''}`;
 		const invalidSort = requestedSort !== null && requestedSort !== 'date';
 		const invalidPage =
 			url.searchParams.has('page') && (url.searchParams.get('page') !== String(page) || page === 1);
+		const invalidFamily = requestedFamily !== null && requestedFamily !== familyFilter;
 		if (
 			legacyCategory ||
 			url.pathname !== canonicalPath ||
 			invalidSort ||
 			invalidPage ||
+			invalidFamily ||
 			url.searchParams.has('view')
 		) {
 			redirect(308, normalizedUrl);
@@ -309,14 +363,22 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 			: sort === 'highest'
 				? [start.k, start.discovered_at, start.id]
 				: [start.discovered_at, start.id];
+	// A family filter is answered from the partial indexes of migration 0030.
+	const [familyCondition, familyBindings] =
+		familyFilter === null
+			? ['', []]
+			: familyFilter === 'all'
+				? ['AND family_k IS NOT NULL', []]
+				: ['AND family_k IS NOT NULL AND family_k = ?', [familyFilter]];
+	const filterKey = familyFilter === null ? '' : `/k=${familyFilter}`;
 	const pageStarts = () =>
-		cached(`page-starts/${selectedCategory}/${sort}`, async () => {
+		cached(`page-starts/${selectedCategory}/${sort}${filterKey}`, async () => {
 			const keys = await db
 				.prepare(
 					`SELECT ${leadingKey ?? 'NULL'} AS k, discovered_at, id FROM submissions
-					 WHERE category_id = ? ORDER BY ${submissionOrder('')}`
+					 WHERE category_id = ? ${familyCondition} ORDER BY ${submissionOrder('')}`
 				)
-				.bind(selectedCategory)
+				.bind(selectedCategory, ...familyBindings)
 				.all<PageStart>();
 			return keys.results.filter((_, index) => index % pageSize === 0);
 		});
@@ -334,20 +396,20 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 				 COALESCE(tool.title, s.tool_text) AS tool_name,
 				 tool.url AS tool_url,
 				 tool.id AS tool_reference_id,
-				 s.discovered_at AS created_at
-				 FROM (SELECT * FROM submissions WHERE category_id = ? ${selection}) s
+				 s.discovered_at AS created_at, s.family_k
+				 FROM (SELECT * FROM submissions WHERE category_id = ? ${familyCondition} ${selection}) s
 				 JOIN contributors contributor ON contributor.id = s.contributor_id
 				 LEFT JOIN submission_resources str ON str.submission_id = s.id AND str.role = 'tool'
 				 LEFT JOIN resources tool ON tool.id = str.resource_id
 				 ORDER BY ${submissionOrder('s.')}`
 			)
-			.bind(selectedCategory, ...bindings)
+			.bind(selectedCategory, ...familyBindings, ...bindings)
 			.all<SubmissionRow>();
 	};
 	// The recent-results view never renders the leaderboard table.
 	const submissions = showRecent
 		? { results: [] as SubmissionRow[] }
-		: await cached(`table/${selectedCategory}/${sort}/${page}`, loadPage);
+		: await cached(`table/${selectedCategory}/${sort}/${page}${filterKey}`, loadPage);
 	const searchClaims = showRecent
 		? await cached('home/search-claims', () =>
 				db
@@ -408,15 +470,27 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	const heading = selectedCategoryRow ? categoryHeading(selectedCategoryRow) : '';
 	const canonicalPath =
 		showRecent || !selectedCategoryRow ? '/' : categoryPath(selectedCategoryRow);
-	const canonicalUrl = `https://powersums.jorisperrenet.com${canonicalPath}${page > 1 && requestedSort !== 'date' ? `?page=${page}` : ''}`;
+	// A family view is its own indexable list, so its canonical URL keeps ?k.
+	const canonicalParameters = new URLSearchParams();
+	if (familyFilter && requestedSort !== 'date') canonicalParameters.set('k', familyFilter);
+	if (page > 1 && requestedSort !== 'date') canonicalParameters.set('page', String(page));
+	const canonicalUrl = `https://powersums.jorisperrenet.com${canonicalPath}${canonicalParameters.size ? `?${canonicalParameters}` : ''}`;
 	const pageSuffix = page > 1 ? ` — Page ${page}` : '';
+	const familySuffix =
+		familyFilter === null
+			? ''
+			: familyFilter === 'all'
+				? ' — Elliptic Families'
+				: ` — Family k = ${familyFilter}`;
 	const metaTitle =
 		!showRecent && selectedCategoryRow
-			? `${heading} — Verified Results${pageSuffix}`
+			? `${heading}${familySuffix} — Verified Results${pageSuffix}`
 			: 'Equal Sums of Powers — Verified Identities & Search Results';
 	const metaDescription =
 		!showRecent && selectedCategoryRow
-			? categoryDescription(selectedCategoryRow, page, pageSize, selectedCount)
+			? familyFilter === null
+				? categoryDescription(selectedCategoryRow, page, pageSize, selectedCount)
+				: `Browse ${filteredCount} machine-verified solutions of a⁴ + b⁴ + c⁴ + d⁴ = e⁴ with e = a + k³(b + c + d)${familyFilter === 'all' ? ' for rational k' : ` for k = ${familyFilter}`}, each on an elliptic curve with infinitely many solutions.`
 			: `Explore ${total} machine-verified equal sums of like powers, near misses, and integer-target solutions with complete equations, methods, and documented search bounds.`;
 
 	return {
@@ -426,13 +500,16 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 		recentResults: recentResults.results,
 		references: references.results,
 		targetCoverage: targetCoverage.results,
+		families,
+		familyFilter,
 		selectedCategory,
 		sort,
 		showRecent,
 		notationFormulas,
 		page,
 		pageSize,
-		selectedCount,
+		// The number of rows listed, which a family filter narrows.
+		selectedCount: filteredCount,
 		total,
 		heading,
 		metaTitle,
@@ -557,11 +634,12 @@ export const actions: Actions = {
 			});
 
 		const verifiedResults: Array<{
-			left: number[];
-			right: number[];
+			left: bigint[];
+			right: bigint[];
 			serializedLeft: string;
 			serializedRight: string;
 			key: string;
+			familyK: string | null;
 		}> = [];
 		const seenKeys = new Set<string>();
 		let skippedCount = 0;
@@ -582,7 +660,11 @@ export const actions: Actions = {
 					...verified,
 					serializedLeft,
 					serializedRight,
-					key
+					key,
+					familyK:
+						category.id === ELLIPTIC_FAMILY_CATEGORY
+							? ellipticFamilyK(verified.left[0], verified.right)
+							: null
 				});
 			} catch (error) {
 				const reason =
@@ -626,8 +708,8 @@ export const actions: Actions = {
 			const submissionIds = newResults.map(() => crypto.randomUUID());
 			const statement = db.prepare(
 				`INSERT INTO submissions
-					 (id, category_id, contributor_id, left_terms, right_terms, tool_text)
-					 SELECT ?, ?, id, ?, ?, ? FROM contributors WHERE name = ?`
+					 (id, category_id, contributor_id, left_terms, right_terms, tool_text, family_k)
+					 SELECT ?, ?, id, ?, ?, ?, ? FROM contributors WHERE name = ?`
 			);
 			const statements = [
 				db.prepare('INSERT OR IGNORE INTO contributors (name) VALUES (?)').bind(username),
@@ -638,6 +720,7 @@ export const actions: Actions = {
 						verified.serializedLeft,
 						verified.serializedRight,
 						resultToolUrl ? null : resultToolName || null,
+						verified.familyK,
 						username
 					)
 				)
