@@ -132,7 +132,8 @@ function categoryHeading(category: CategoryRow) {
 	const featured: Record<string, string> = {
 		'7-4-4': 'Equal Sums of Seventh Powers (4 vs 4)',
 		'5-3-2-pm1': 'Fifth-Power Near Misses (3 vs 2, ±1)',
-		'5-5-n': 'Fifth-Power Integer Targets'
+		'5-5-n': 'Fifth-Power Integer Targets',
+		[ELLIPTIC_FAMILY_CATEGORY]: 'Fourth Powers (1 vs 4): Elliptic Families'
 	};
 	if (featured[category.id]) return featured[category.id];
 	const power = powerName(category.exponent);
@@ -288,18 +289,15 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 						.sort((left, right) => familyValue(left.k) - familyValue(right.k));
 				})
 			: [];
-	// ?k=all lists every family solution, ?k=n/m one family; anything else is dropped.
+	// ?k=n/m lists one family; anything else is dropped.
 	const requestedFamily = url.searchParams.get('k');
-	const familyFilter =
-		requestedFamily === 'all' || families.some((family) => family.k === requestedFamily)
-			? requestedFamily
-			: null;
+	const familyFilter = families.some((family) => family.k === requestedFamily)
+		? requestedFamily
+		: null;
 	const filteredCount =
 		familyFilter === null
 			? selectedCount
-			: families
-					.filter((family) => familyFilter === 'all' || family.k === familyFilter)
-					.reduce((sum, family) => sum + family.solution_count, 0);
+			: (families.find((family) => family.k === familyFilter)?.solution_count ?? 0);
 	const requestedPage = Number.parseInt(url.searchParams.get('page') ?? '1', 10);
 	const lastPage = Math.max(1, Math.ceil(filteredCount / pageSize));
 	const page = Number.isSafeInteger(requestedPage)
@@ -367,9 +365,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	const [familyCondition, familyBindings] =
 		familyFilter === null
 			? ['', []]
-			: familyFilter === 'all'
-				? ['AND family_k IS NOT NULL', []]
-				: ['AND family_k IS NOT NULL AND family_k = ?', [familyFilter]];
+			: ['AND family_k IS NOT NULL AND family_k = ?', [familyFilter]];
 	const filterKey = familyFilter === null ? '' : `/k=${familyFilter}`;
 	const pageStarts = () =>
 		cached(`page-starts/${selectedCategory}/${sort}${filterKey}`, async () => {
@@ -476,21 +472,16 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	if (page > 1 && requestedSort !== 'date') canonicalParameters.set('page', String(page));
 	const canonicalUrl = `https://powersums.jorisperrenet.com${canonicalPath}${canonicalParameters.size ? `?${canonicalParameters}` : ''}`;
 	const pageSuffix = page > 1 ? ` — Page ${page}` : '';
-	const familySuffix =
-		familyFilter === null
-			? ''
-			: familyFilter === 'all'
-				? ' — Elliptic Families'
-				: ` — Family k = ${familyFilter}`;
+	const familySuffix = familyFilter === null ? '' : ` — k = ${familyFilter}`;
 	const metaTitle =
 		!showRecent && selectedCategoryRow
 			? `${heading}${familySuffix} — Verified Results${pageSuffix}`
 			: 'Equal Sums of Powers — Verified Identities & Search Results';
 	const metaDescription =
 		!showRecent && selectedCategoryRow
-			? familyFilter === null
+			? selectedCategory !== ELLIPTIC_FAMILY_CATEGORY
 				? categoryDescription(selectedCategoryRow, page, pageSize, selectedCount)
-				: `Browse ${filteredCount} machine-verified solutions of a⁴ + b⁴ + c⁴ + d⁴ = e⁴ with e = a + k³(b + c + d)${familyFilter === 'all' ? ' for rational k' : ` for k = ${familyFilter}`}, each on an elliptic curve with infinitely many solutions.`
+				: `Browse ${filteredCount} machine-verified solutions of a⁴ + b⁴ + c⁴ + d⁴ = e⁴ with e = a + k³(b + c + d)${familyFilter === null ? ' for rational k' : ` for k = ${familyFilter}`}, each on an elliptic curve with infinitely many solutions.`
 			: `Explore ${total} machine-verified equal sums of like powers, near misses, and integer-target solutions with complete equations, methods, and documented search bounds.`;
 
 	return {
@@ -647,6 +638,16 @@ export const actions: Actions = {
 		for (const [index, line] of equationLines.entries()) {
 			try {
 				const verified = parseAndVerify(line, category);
+				// (4, 1, 4) records only the solutions in an elliptic-curve family.
+				const familyK =
+					category.id === ELLIPTIC_FAMILY_CATEGORY
+						? ellipticFamilyK(verified.left[0], verified.right)
+						: null;
+				if (category.id === ELLIPTIC_FAMILY_CATEGORY && familyK === null) {
+					throw new Error(
+						'This category records only solutions with e = a + k³(b + c + d) for a rational k, and this one has no such k.'
+					);
+				}
 				const serializedLeft = serializeTerms(verified.left);
 				const serializedRight = serializeTerms(verified.right);
 				const key = identityKey(serializedLeft, serializedRight, category);
@@ -661,10 +662,7 @@ export const actions: Actions = {
 					serializedLeft,
 					serializedRight,
 					key,
-					familyK:
-						category.id === ELLIPTIC_FAMILY_CATEGORY
-							? ellipticFamilyK(verified.left[0], verified.right)
-							: null
+					familyK
 				});
 			} catch (error) {
 				const reason =

@@ -3,8 +3,8 @@
 // e = a + k³(b + c + d) for rational k (https://mathoverflow.net/q/515455):
 // for every such k, one solution lies on an elliptic curve that yields
 // infinitely many more. Only these solutions are "interesting" among the
-// tens of thousands in (4, 1, 4), so each row records its k, if any, in
-// submissions.family_k.
+// tens of thousands of solutions, so (4, 1, 4) records only them, each with
+// its k in submissions.family_k.
 export const ELLIPTIC_FAMILY_CATEGORY = '4-1-4';
 
 function absolute(value: bigint) {

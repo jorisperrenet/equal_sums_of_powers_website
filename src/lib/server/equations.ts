@@ -259,8 +259,16 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 		};
 	}
 
-	const left = parseSide(parts[0], category.exponent);
-	const right = parseSide(parts[1], category.exponent);
+	let left = parseSide(parts[0], category.exponent);
+	let right = parseSide(parts[1], category.exponent);
+	// When the sides differ in length, either may be written first.
+	if (
+		category.left_count !== category.right_count &&
+		left.length === category.right_count &&
+		right.length === category.left_count
+	) {
+		[left, right] = [right, left];
+	}
 	if (left.length !== category.left_count || right.length !== category.right_count) {
 		throw new Error(
 			`This category needs ${category.left_count} terms on the left and ${category.right_count} on the right.`

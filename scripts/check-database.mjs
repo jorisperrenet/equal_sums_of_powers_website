@@ -182,6 +182,10 @@ for (const row of rows) {
 		if (familyKs.get(row.id) !== expectedFamilyK) {
 			fail(row, `family_k is ${familyKs.get(row.id)} but should be ${expectedFamilyK}`);
 		}
+		// (4, 1, 4) records only the solutions in an elliptic-curve family.
+		if (row.category_id === ELLIPTIC_FAMILY_CATEGORY && expectedFamilyK === null) {
+			fail(row, 'is in (4, 1, 4) but has no k with e = a + k³(b + c + d)');
+		}
 	}
 
 	let bases;

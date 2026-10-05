@@ -14,6 +14,16 @@ describe('parseAndVerify', () => {
 		expect(() => parseAndVerify('1+2+3+4=1+2+3+5', category)).toThrow(/differ by/);
 	});
 
+	it('accepts the sides in either order when their lengths differ', () => {
+		const quartic = { id: '4-1-4', exponent: 4, left_count: 1, right_count: 4 };
+		expect(parseAndVerify('30+120+272+315=353', quartic).equation).toBe(
+			'353 = 315 + 272 + 120 + 30'
+		);
+		expect(parseAndVerify('353=30+120+272+315', quartic).equation).toBe(
+			'353 = 315 + 272 + 120 + 30'
+		);
+	});
+
 	it('rejects the wrong number of terms', () => {
 		expect(() => parseAndVerify('1+2+3=1+2+3', category)).toThrow(/needs 4 terms/);
 	});

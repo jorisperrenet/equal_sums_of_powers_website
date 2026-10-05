@@ -604,11 +604,8 @@
 							<p class="mt-1 text-sm text-[#555]">
 								{data.selectedCount} machine-verified {selectedCategory?.format === 'target'
 									? 'solutions'
-									: 'identities'}{data.familyFilter === 'all'
-									? ' in elliptic families'
-									: data.familyFilter
-										? ` with k = ${data.familyFilter}`
-										: ''}, ordered by {data.sort === 'n'
+									: 'identities'}{data.familyFilter ? ` with k = ${data.familyFilter}` : ''},
+								ordered by {data.sort === 'n'
 									? 'integer target'
 									: data.sort === 'highest'
 										? 'highest term'
@@ -681,37 +678,25 @@
 				{/if}
 
 				{#if data.families.length}
-					{@const familyCount = data.families.reduce(
-						(sum, family) => sum + Number(family.solution_count),
-						0
-					)}
 					<div class="mt-4 border border-[#aaa] bg-white p-4">
 						<p class="text-sm">
-							A solution with <strong>e = a + k³(b + c + d)</strong> for a rational <i>k</i>, after
-							reordering the terms and choosing their signs, lies on an elliptic curve that yields
-							infinitely many more. For <i>k</i> = 1 this is the Jacobi–Madden equation (2008); the
-							generalization to rational <i>k</i> dates from 2026.
-							{familyCount} of {selectedCategory?.submission_count} recorded solutions belong to such
-							a family, for {data.families.length} values of <i>k</i>.
+							This category records only solutions with <strong>e = a + k³(b + c + d)</strong> for a
+							rational <i>k</i>, after reordering the terms and choosing their signs. Each lies on
+							an elliptic curve that yields infinitely many more. For <i>k</i> = 1 this is the
+							Jacobi–Madden equation (2008); the generalization to rational <i>k</i> dates from
+							2026.
+							{selectedCategory?.submission_count} solutions are recorded, for {data.families
+								.length}
+							values of <i>k</i>.
 						</p>
-						<!-- Filtering only matters once the category also holds solutions outside every family. -->
-						{#if familyCount < Number(selectedCategory?.submission_count ?? 0) || data.familyFilter !== null}
-							<nav class="mt-3 text-sm" aria-label="Family filter">
-								<span class="font-bold">Show:</span>
+						{#if data.familyFilter}
+							<p class="mt-3 text-sm">
+								Showing <i>k</i> = <strong>{data.familyFilter}</strong>.
 								<a
 									href={resolve(categoryHref({ family: null }) as ArchiveHref)}
-									class={data.familyFilter === null
-										? 'ml-2 font-bold text-[#202020]'
-										: 'ml-2 text-[#0645ad] hover:underline'}>All solutions</a
+									class="ml-1 text-[#0645ad] hover:underline">Show every k</a
 								>
-								<span class="px-1 text-[#888]">|</span>
-								<a
-									href={resolve(categoryHref({ family: 'all' }) as ArchiveHref)}
-									class={data.familyFilter === 'all'
-										? 'font-bold text-[#202020]'
-										: 'text-[#0645ad] hover:underline'}>Elliptic families only</a
-								>
-							</nav>
+							</p>
 						{/if}
 						<details class="mt-3" open={data.familyFilter !== null}>
 							<summary class="cursor-pointer text-sm font-bold text-[#0645ad] hover:underline"

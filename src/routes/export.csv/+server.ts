@@ -55,19 +55,15 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 			: sort === 'highest'
 				? 's.max_term ASC, s.discovered_at ASC, s.id ASC'
 				: 's.discovered_at DESC, s.id DESC';
-	// Like the leaderboard, ?k=all keeps the elliptic families and ?k=n/m one of them.
+	// Like the leaderboard, ?k=n/m keeps one elliptic family.
 	const hasFamilies = category.id === ELLIPTIC_FAMILY_CATEGORY;
 	const requestedFamily = url.searchParams.get('k');
 	const family =
-		hasFamilies && requestedFamily && /^(all|\d+(\/\d+)?)$/.test(requestedFamily)
+		hasFamilies && requestedFamily && /^\d+(\/\d+)?$/.test(requestedFamily)
 			? requestedFamily
 			: null;
 	const [familyCondition, familyBindings] =
-		family === null
-			? ['', []]
-			: family === 'all'
-				? ['AND s.family_k IS NOT NULL', []]
-				: ['AND s.family_k IS NOT NULL AND s.family_k = ?', [family]];
+		family === null ? ['', []] : ['AND s.family_k IS NOT NULL AND s.family_k = ?', [family]];
 	const cached = createQueryCache(platform, url.origin);
 	const results = await cached(`export/${category.id}/${sort}${family ? `/k=${family}` : ''}`, () =>
 		db
