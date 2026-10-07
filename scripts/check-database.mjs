@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { ELLIPTIC_FAMILY_CATEGORY, ellipticFamilyK } from '../src/lib/elliptic-family.ts';
-import { parseStoredTerms } from '../src/lib/terms.ts';
+import { ELLIPTIC_FAMILY_CATEGORY, ellipticFamilies } from '../src/lib/elliptic-family.ts';
+import { MAX_TERM_DIGITS, parseStoredTerms } from '../src/lib/terms.ts';
 
 const wrangler = fileURLToPath(
 	new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url)
@@ -176,15 +176,23 @@ for (const row of rows) {
 	if (row.max_term !== maxTermKey(expectedMaxTerm)) {
 		fail(row, `max_term is ${row.max_term} but should be ${maxTermKey(expectedMaxTerm)}`);
 	}
+	// The contribute form accepts terms of at most MAX_TERM_DIGITS digits, and
+	// imports must keep to the same limit.
+	if (expectedMaxTerm.toString().length > MAX_TERM_DIGITS) {
+		fail(
+			row,
+			`has a term of ${expectedMaxTerm.toString().length} digits, above ${MAX_TERM_DIGITS}`
+		);
+	}
 	if (hasMigration0030) {
 		const expectedFamilyK =
-			row.category_id === ELLIPTIC_FAMILY_CATEGORY ? ellipticFamilyK(left[0], right) : null;
+			row.category_id === ELLIPTIC_FAMILY_CATEGORY ? ellipticFamilies(left[0], right) : null;
 		if (familyKs.get(row.id) !== expectedFamilyK) {
 			fail(row, `family_k is ${familyKs.get(row.id)} but should be ${expectedFamilyK}`);
 		}
 		// (4, 1, 4) records only the solutions in an elliptic-curve family.
 		if (row.category_id === ELLIPTIC_FAMILY_CATEGORY && expectedFamilyK === null) {
-			fail(row, 'is in (4, 1, 4) but has no k with e = a + k³(b + c + d)');
+			fail(row, 'is in (4, 1, 4) but has no k with e = a + k³(b + c + d) and no two equal terms');
 		}
 	}
 

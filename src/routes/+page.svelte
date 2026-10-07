@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { resolve } from '$app/paths';
+	import { EQUAL_TERMS_FAMILY, formatFamilies } from '$lib/elliptic-family';
 	import { normalizeIdentity, type IdentityShape } from '$lib/identity';
 	import { TARGET_COUNT, TARGET_MAX, TARGET_MIN } from '$lib/target-range';
 	import { onMount, tick } from 'svelte';
@@ -43,6 +44,12 @@
 	let contributeOpen = $state(initiallyOpenContribution());
 	let selectedCategory = $derived(
 		data.categories.find((category) => category.id === data.selectedCategory)
+	);
+	let hasEqualTermsFamily = $derived(
+		data.families.some((family) => family.k === EQUAL_TERMS_FAMILY)
+	);
+	let kFamilyCount = $derived(
+		data.families.filter((family) => family.k !== EQUAL_TERMS_FAMILY).length
 	);
 	let exponentGroups = $derived(
 		Array.from(new Set(data.categories.map((category) => category.exponent)))
@@ -604,8 +611,9 @@
 							<p class="mt-1 text-sm text-[#555]">
 								{data.selectedCount} machine-verified {selectedCategory?.format === 'target'
 									? 'solutions'
-									: 'identities'}{data.familyFilter ? ` with k = ${data.familyFilter}` : ''},
-								ordered by {data.sort === 'n'
+									: 'identities'}{data.familyFilter
+									? ` with ${formatFamilies(data.familyFilter)}`
+									: ''}, ordered by {data.sort === 'n'
 									? 'integer target'
 									: data.sort === 'highest'
 										? 'highest term'
@@ -680,33 +688,40 @@
 				{#if data.families.length}
 					<div class="mt-4 border border-[#aaa] bg-white p-4">
 						<p class="text-sm">
-							This category records only solutions with <strong>e = a + k³(b + c + d)</strong> for a
-							rational <i>k</i>, after reordering the terms and choosing their signs. Each lies on
-							an elliptic curve that yields infinitely many more. For <i>k</i> = 1 this is the
-							Jacobi–Madden equation (2008); the generalization to rational <i>k</i> dates from
-							2026.
-							{selectedCategory?.submission_count} solutions are recorded, for {data.families
-								.length}
-							values of <i>k</i>.
+							This category records only solutions in an elliptic-curve family: those with
+							<strong>e = a + k³(b + c + d)</strong> for a rational <i>k</i>, after reordering the
+							terms and choosing their signs, and those with two equal terms,
+							<strong>2a⁴ + c⁴ + d⁴ = e⁴</strong>. Each lies on an elliptic curve that yields
+							infinitely many more. For <i>k</i> = 1 this is the Jacobi–Madden equation (2008); the
+							generalization to rational <i>k</i> and the equal-terms family date from 2026.
+							{selectedCategory?.submission_count} solutions are recorded, for {kFamilyCount}
+							values of <i>k</i>{#if hasEqualTermsFamily}&nbsp;and the family <i>a</i> =
+								<i>b</i>{/if}.
+						</p>
+						<p class="mt-3 text-sm">
+							For <i>k</i> = 1, only solutions with e &lt; 10<sup>30</sup> are listed, plus five
+							larger ones published before October 2026. For every other <i>k</i> and for
+							<i>a</i> = <i>b</i>, every known solution is listed, up to the site's limit of 100
+							digits per term.
 						</p>
 						{#if data.familyFilter}
 							<p class="mt-3 text-sm">
-								Showing <i>k</i> = <strong>{data.familyFilter}</strong>.
+								Showing <strong>{formatFamilies(data.familyFilter)}</strong>.
 								<a
 									href={resolve(categoryHref({ family: null }) as ArchiveHref)}
-									class="ml-1 text-[#0645ad] hover:underline">Show every k</a
+									class="ml-1 text-[#0645ad] hover:underline">Show every family</a
 								>
 							</p>
 						{/if}
 						<details class="mt-3" open={data.familyFilter !== null}>
 							<summary class="cursor-pointer text-sm font-bold text-[#0645ad] hover:underline"
-								>Show the table of k values</summary
+								>Show the table of families</summary
 							>
 							<div class="mt-2 max-h-[32rem] overflow-auto border border-[#bbb]">
 								<table class="w-full border-collapse text-sm">
 									<thead>
 										<tr class="border-b border-[#888] bg-[#e5e5e0] text-left">
-											<th class="border-r border-[#bbb] px-2 py-1 font-bold">k</th>
+											<th class="border-r border-[#bbb] px-2 py-1 font-bold">Family</th>
 											<th class="border-r border-[#bbb] px-2 py-1 text-right font-bold"
 												>Solutions</th
 											>
@@ -718,11 +733,11 @@
 											<tr class="border-b border-[#ddd] last:border-b-0 even:bg-[#f7f7f4]">
 												<td class="border-r border-[#ddd] px-2 py-1 whitespace-nowrap">
 													{#if data.familyFilter === family.k}
-														<strong>{family.k}</strong>
+														<strong>{formatFamilies(family.k)}</strong>
 													{:else}
 														<a
 															href={resolve(categoryHref({ family: family.k }) as ArchiveHref)}
-															class="text-[#0645ad] hover:underline">{family.k}</a
+															class="text-[#0645ad] hover:underline">{formatFamilies(family.k)}</a
 														>
 													{/if}
 												</td>
@@ -746,7 +761,7 @@
 								<tr class="border-b border-[#888] bg-[#e5e5e0] text-left">
 									<th class="border-r border-[#bbb] px-2 py-1.5 font-bold">Identity</th>
 									{#if data.families.length}
-										<th class="w-20 border-r border-[#bbb] px-2 py-1.5 font-bold">k</th>
+										<th class="w-24 border-r border-[#bbb] px-2 py-1.5 font-bold">Family</th>
 									{/if}
 									<th class="w-40 border-r border-[#bbb] px-2 py-1.5 font-bold">Contributor</th>
 									<th class="w-32 border-r border-[#bbb] px-2 py-1.5 font-bold">Date</th>
@@ -797,7 +812,7 @@
 										</td>
 										{#if data.families.length}
 											<td class="border-r border-[#ddd] px-2 py-2 whitespace-nowrap"
-												>{submission.family_k?.replaceAll(',', ', ') ?? ''}</td
+												>{submission.family_k ? formatFamilies(submission.family_k) : ''}</td
 											>
 										{/if}
 										<td class="border-r border-[#ddd] px-2 py-2">{submission.username}</td>

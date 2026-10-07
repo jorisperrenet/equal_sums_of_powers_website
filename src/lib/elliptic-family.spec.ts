@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ellipticFamilyK } from './elliptic-family';
+import {
+	ellipticFamilies,
+	ellipticFamilyK,
+	formatFamilies,
+	isFamilyLabel
+} from './elliptic-family';
 
 describe('ellipticFamilyK', () => {
 	it('finds k = 1 for the smallest Jacobi–Madden solution', () => {
@@ -26,5 +31,31 @@ describe('ellipticFamilyK', () => {
 	it('returns null for a solution outside every family', () => {
 		// The smallest solution of a⁴ + b⁴ + c⁴ + d⁴ = e⁴.
 		expect(ellipticFamilyK(353n, [315n, 272n, 120n, 30n])).toBeNull();
+	});
+});
+
+describe('ellipticFamilies', () => {
+	it('labels a solution with two equal terms', () => {
+		// 2 · 244580⁴ + 110135⁴ + 249568⁴ = 325193⁴, Eugene Go's solution.
+		expect(ellipticFamilies(325193n, [249568n, 244580n, 244580n, 110135n])).toBe('a=b');
+	});
+
+	it('keeps the k of a solution without equal terms', () => {
+		expect(ellipticFamilies(2339217n, [2018095n, 1911244n, 329580n, 32420n])).toBe('3');
+	});
+
+	it('returns null for a solution outside every family', () => {
+		expect(ellipticFamilies(353n, [315n, 272n, 120n, 30n])).toBeNull();
+	});
+});
+
+describe('family labels', () => {
+	it('accepts k values and the equal-terms family only', () => {
+		expect(['1', '5/3', 'a=b'].every(isFamilyLabel)).toBe(true);
+		expect(['', '0.5', '1,3', 'a=c'].some(isFamilyLabel)).toBe(false);
+	});
+
+	it('formats several families', () => {
+		expect(formatFamilies('1/2,3,a=b')).toBe('k = 1/2, k = 3, a = b');
 	});
 });

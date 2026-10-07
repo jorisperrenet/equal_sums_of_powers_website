@@ -1,6 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type { RequestHandler } from './$types';
-import { ELLIPTIC_FAMILY_CATEGORY } from '$lib/elliptic-family';
+import { ELLIPTIC_FAMILY_CATEGORY, formatFamilies, isFamilyLabel } from '$lib/elliptic-family';
 import { formatIdentity, type IdentityShape } from '$lib/identity';
 import { createQueryCache } from '$lib/server/cache';
 
@@ -55,13 +55,11 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 			: sort === 'highest'
 				? 's.max_term ASC, s.discovered_at ASC, s.id ASC'
 				: 's.discovered_at DESC, s.id DESC';
-	// Like the leaderboard, ?k=n/m keeps one elliptic family.
+	// Like the leaderboard, ?k=n/m or ?k=a=b keeps one elliptic family.
 	const hasFamilies = category.id === ELLIPTIC_FAMILY_CATEGORY;
 	const requestedFamily = url.searchParams.get('k');
 	const family =
-		hasFamilies && requestedFamily && /^\d+(\/\d+)?$/.test(requestedFamily)
-			? requestedFamily
-			: null;
+		hasFamilies && requestedFamily && isFamilyLabel(requestedFamily) ? requestedFamily : null;
 	const [familyCondition, familyBindings] =
 		family === null ? ['', []] : ['AND s.family_k IS NOT NULL AND s.family_k = ?', [family]];
 	const cached = createQueryCache(platform, url.origin);
@@ -83,7 +81,7 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 	);
 
 	const rows = [
-		csvRow(['Identity', ...(hasFamilies ? ['k'] : []), 'Contributor', 'Date', 'Tools/Source'])
+		csvRow(['Identity', ...(hasFamilies ? ['Family'] : []), 'Contributor', 'Date', 'Tools/Source'])
 	];
 	for (const result of results.results) {
 		const tool = result.tool_url
@@ -92,7 +90,7 @@ export const GET: RequestHandler = async ({ platform, url }) => {
 		rows.push(
 			csvRow([
 				formatIdentity(result.left_terms, result.right_terms, category),
-				...(hasFamilies ? [result.family_k ?? ''] : []),
+				...(hasFamilies ? [result.family_k ? formatFamilies(result.family_k) : ''] : []),
 				result.username,
 				dateOnly(result.discovered_at),
 				tool

@@ -1,6 +1,11 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { ELLIPTIC_FAMILY_CATEGORY, ellipticFamilyK } from '$lib/elliptic-family';
+import {
+	ELLIPTIC_FAMILY_CATEGORY,
+	EQUAL_TERMS_FAMILY,
+	ellipticFamilies,
+	formatFamilies
+} from '$lib/elliptic-family';
 import { identityKey } from '$lib/identity';
 import { createQueryCache } from '$lib/server/cache';
 import { parseAndVerify, type CategoryShape } from '$lib/server/equations';
@@ -99,7 +104,9 @@ function maxTermDigits(value: number | string) {
 	return typeof value === 'number' ? value.toString() : value.slice(value.indexOf(':') + 1);
 }
 
+// Families sort by their first k, and the equal-terms family comes last.
 function familyValue(k: string) {
+	if (k.startsWith(EQUAL_TERMS_FAMILY)) return Infinity;
 	const [n, m = '1'] = k.split(',')[0].split('/');
 	return Number(n) / Number(m);
 }
@@ -289,7 +296,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 						.sort((left, right) => familyValue(left.k) - familyValue(right.k));
 				})
 			: [];
-	// ?k=n/m lists one family; anything else is dropped.
+	// ?k=n/m or ?k=a=b lists one family; anything else is dropped.
 	const requestedFamily = url.searchParams.get('k');
 	const familyFilter = families.some((family) => family.k === requestedFamily)
 		? requestedFamily
@@ -472,7 +479,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 	if (page > 1 && requestedSort !== 'date') canonicalParameters.set('page', String(page));
 	const canonicalUrl = `https://powersums.jorisperrenet.com${canonicalPath}${canonicalParameters.size ? `?${canonicalParameters}` : ''}`;
 	const pageSuffix = page > 1 ? ` — Page ${page}` : '';
-	const familySuffix = familyFilter === null ? '' : ` — k = ${familyFilter}`;
+	const familySuffix = familyFilter === null ? '' : ` — ${formatFamilies(familyFilter)}`;
 	const metaTitle =
 		!showRecent && selectedCategoryRow
 			? `${heading}${familySuffix} — Verified Results${pageSuffix}`
@@ -481,7 +488,13 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 		!showRecent && selectedCategoryRow
 			? selectedCategory !== ELLIPTIC_FAMILY_CATEGORY
 				? categoryDescription(selectedCategoryRow, page, pageSize, selectedCount)
-				: `Browse ${filteredCount} machine-verified solutions of a⁴ + b⁴ + c⁴ + d⁴ = e⁴ with e = a + k³(b + c + d)${familyFilter === null ? ' for rational k' : ` for k = ${familyFilter}`}, each on an elliptic curve with infinitely many solutions.`
+				: `Browse ${filteredCount} machine-verified solutions of a⁴ + b⁴ + c⁴ + d⁴ = e⁴ ${
+						familyFilter === null
+							? 'with e = a + k³(b + c + d) for rational k or with two equal terms'
+							: familyFilter === EQUAL_TERMS_FAMILY
+								? 'with two equal terms, a = b'
+								: `with e = a + k³(b + c + d) for k = ${familyFilter}`
+					}, each on an elliptic curve with infinitely many solutions.`
 			: `Explore ${total} machine-verified equal sums of like powers, near misses, and integer-target solutions with complete equations, methods, and documented search bounds.`;
 
 	return {
@@ -641,11 +654,11 @@ export const actions: Actions = {
 				// (4, 1, 4) records only the solutions in an elliptic-curve family.
 				const familyK =
 					category.id === ELLIPTIC_FAMILY_CATEGORY
-						? ellipticFamilyK(verified.left[0], verified.right)
+						? ellipticFamilies(verified.left[0], verified.right)
 						: null;
 				if (category.id === ELLIPTIC_FAMILY_CATEGORY && familyK === null) {
 					throw new Error(
-						'This category records only solutions with e = a + k³(b + c + d) for a rational k, and this one has no such k.'
+						'This category records only solutions in an elliptic-curve family, with e = a + k³(b + c + d) for a rational k or with two equal terms, and this one is in neither.'
 					);
 				}
 				const serializedLeft = serializeTerms(verified.left);

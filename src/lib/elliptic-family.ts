@@ -2,10 +2,28 @@
 // many solutions with e = a + b + c + d, and in 2026 this was generalized to
 // e = a + k³(b + c + d) for rational k (https://mathoverflow.net/q/515455):
 // for every such k, one solution lies on an elliptic curve that yields
-// infinitely many more. Only these solutions are "interesting" among the
-// tens of thousands of solutions, so (4, 1, 4) records only them, each with
-// its k in submissions.family_k.
+// infinitely many more. A third construction followed in October 2026
+// (https://mathoverflow.net/q/515812): every solution with two equal terms,
+// 2a⁴ + c⁴ + d⁴ = e⁴, lies on such a curve too. Only these solutions are
+// "interesting" among the tens of thousands of solutions, so (4, 1, 4)
+// records only them, each with its families in submissions.family_k.
 export const ELLIPTIC_FAMILY_CATEGORY = '4-1-4';
+
+// The family_k label of the two-equal-terms family; every other label is a k.
+export const EQUAL_TERMS_FAMILY = 'a=b';
+
+// A family_k label as "n", "n/m" or "a=b", which is also the ?k= filter value.
+export function isFamilyLabel(label: string) {
+	return label === EQUAL_TERMS_FAMILY || /^\d+(\/\d+)?$/.test(label);
+}
+
+// "k = 5/3" or "a = b", comma-separated for a solution in several families.
+export function formatFamilies(labels: string) {
+	return labels
+		.split(',')
+		.map((label) => (label === EQUAL_TERMS_FAMILY ? 'a = b' : `k = ${label}`))
+		.join(', ');
+}
 
 function absolute(value: bigint) {
 	return value < 0n ? -value : value;
@@ -74,4 +92,14 @@ export function ellipticFamilyK(e: bigint, terms: bigint[]): string | null {
 		.sort((left, right) => left[1] - right[1])
 		.map(([label]) => label)
 		.join(',');
+}
+
+// Every family of a solution as its family_k value: the k values of
+// ellipticFamilyK, then "a=b" when two terms are equal up to sign; null when
+// there is none.
+export function ellipticFamilies(e: bigint, terms: bigint[]): string | null {
+	if (terms.length !== 4) return null;
+	const labels = [ellipticFamilyK(e, terms)];
+	if (new Set(terms.map(absolute)).size < terms.length) labels.push(EQUAL_TERMS_FAMILY);
+	return labels.filter(Boolean).join(',') || null;
 }
