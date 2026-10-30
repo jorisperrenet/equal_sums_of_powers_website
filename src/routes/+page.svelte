@@ -2,6 +2,7 @@
 	import { browser } from '$app/environment';
 	import { resolve } from '$app/paths';
 	import { EQUAL_TERMS_FAMILY, formatFamilies } from '$lib/elliptic-family';
+	import { categoryCondition } from '$lib/category-conditions';
 	import { normalizeIdentity, type IdentityShape } from '$lib/identity';
 	import { TARGET_COUNT, TARGET_MAX, TARGET_MIN } from '$lib/target-range';
 	import { onMount, tick } from 'svelte';
@@ -237,9 +238,10 @@
 	}
 
 	function shortNotation(category: Category) {
+		const condition = categoryCondition(category.id);
 		return category.format === 'target'
 			? `${category.left_count} terms = N`
-			: `${category.left_count} vs ${category.right_count}`;
+			: `${category.left_count} vs ${category.right_count}${condition ? `, ${condition.short}` : ''}`;
 	}
 
 	function categoryForId(id: string) {
@@ -482,6 +484,66 @@
 
 	<main class="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-9">
 		{#if data.showRecent}
+			<section
+				class="mb-9 border border-[#aaa] bg-white p-5 sm:p-6"
+				aria-labelledby="welcome-heading"
+			>
+				<h2 id="welcome-heading" class="font-serif text-2xl font-bold">
+					Welcome to the archive of equal sums of like powers
+				</h2>
+				<div class="mt-3 grid gap-x-8 gap-y-5 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+					<div class="min-w-0 space-y-3 text-sm leading-6 text-[#333]">
+						<p>
+							This site collects known solutions of equations such as
+							<i>a</i><sup>6</sup> = <i>b</i><sub>1</sub><sup>6</sup> + … +
+							<i>b</i><sub>7</sub><sup>6</sup>: equal sums of like powers, together with near misses
+							(±1) and sums hitting a fixed integer target. Every identity is checked with exact
+							integer arithmetic before it is stored, and each is credited to its discoverer with
+							the date and the method used.
+						</p>
+						<p>
+							Choose a power in the bar above to browse its categories; dashed chips marked
+							<i>open</i> have no known solution yet. Reported search ranges are listed under Search coverage;
+							they are the contributors' own statements and are not independently verified. New solutions
+							and completed searches can be added by anyone through the forms at the bottom of this page.
+						</p>
+						<p class="flex flex-wrap gap-x-4 gap-y-1">
+							<a href="#notation-heading" class="text-[#0645ad] hover:underline">Notation</a>
+							<a href={resolve('/references/')} class="text-[#0645ad] hover:underline">References</a
+							>
+							<a
+								href="#contribute"
+								onclick={openContributionForm}
+								class="text-[#0645ad] hover:underline">Contribute a result</a
+							>
+							<a href="#search-coverage-heading" class="text-[#0645ad] hover:underline"
+								>Search coverage</a
+							>
+						</p>
+					</div>
+					<div
+						class="min-w-0 border-t border-[#ddd] pt-4 md:border-t-0 md:border-l md:pt-0 md:pl-6"
+					>
+						<h3 class="text-xs font-bold tracking-wider text-[#555] uppercase">What's new</h3>
+						<ul class="mt-2 space-y-2 text-sm leading-6 text-[#333]">
+							<li>
+								<span class="font-bold">Oct 2026.</span>
+								New category
+								<a
+									href={data.categoryPaths['6-1-7-coprime-7']}
+									class="text-[#0645ad] hover:underline">(6, 1, 7; 7 ∤ <i>a</i>)</a
+								>: sixth powers, one versus seven terms, with the lone term not divisible by 7.
+							</li>
+							<li>
+								<span class="font-bold">Oct 2026.</span>
+								New open categories for 11th powers with 13 terms, 12th powers with 14–16 terms and 13th
+								powers with 16–18 terms.
+							</li>
+						</ul>
+					</div>
+				</div>
+			</section>
+
 			<section aria-labelledby="recent-heading">
 				<div class="border-b-2 border-[#555] pb-3">
 					<h1 id="recent-heading" class="font-serif text-3xl font-bold">Recent Results</h1>
@@ -990,12 +1052,14 @@
 
 				<details class="mt-4 border border-[#aaa] bg-white">
 					<summary class="cursor-pointer bg-[#e5e5e0] px-4 py-2.5 text-sm font-bold"
-						>Report a search with no new results</summary
+						>Report a completed search</summary
 					>
 					<form method="POST" action="?/claimSearch" class="border-t border-[#aaa] p-4 sm:p-5">
 						<p class="mb-4 text-sm leading-6 text-[#444]">
-							Please link to source code or a public tool where possible. Open methods make coverage
-							claims easier to reproduce and extend.
+							Use this to record the range a finished search covered, whether or not it found
+							anything. Submit any new solutions with the form below first; this report states that
+							the search found no others in the stated range. Please link to source code or a public
+							tool where possible. Open methods make coverage claims easier to reproduce and extend.
 						</p>
 						<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
 							<label class="block text-sm font-bold"

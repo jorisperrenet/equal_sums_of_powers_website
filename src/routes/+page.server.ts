@@ -6,6 +6,7 @@ import {
 	ellipticFamilies,
 	formatFamilies
 } from '$lib/elliptic-family';
+import { categoryCondition } from '$lib/category-conditions';
 import { identityKey } from '$lib/identity';
 import { createQueryCache } from '$lib/server/cache';
 import { parseAndVerify, type CategoryShape } from '$lib/server/equations';
@@ -127,7 +128,9 @@ function powerName(exponent: number, capitalized = true) {
 		8: 'eighth',
 		9: 'ninth',
 		10: 'tenth',
-		11: 'eleventh'
+		11: 'eleventh',
+		12: 'twelfth',
+		13: 'thirteenth'
 	};
 	const name =
 		names[exponent] ??
@@ -144,6 +147,9 @@ function categoryHeading(category: CategoryRow) {
 	};
 	if (featured[category.id]) return featured[category.id];
 	const power = powerName(category.exponent);
+	const condition = categoryCondition(category.id);
+	if (condition)
+		return `Equal Sums of ${power} Powers (${category.left_count} vs ${category.right_count}), ${condition.phrase}`;
 	if (category.format === 'target') return `${power}-Power Integer Targets`;
 	if (category.format === 'near_miss')
 		return `${power}-Power Near Misses (${category.left_count} vs ${category.right_count}, ±1)`;
@@ -170,7 +176,9 @@ function categoryDescription(
 	if (category.format === 'near_miss') {
 		return `Browse ${amount} ${power}-power near misses (${category.left_count} vs ${category.right_count}, ±1), ${details}.`;
 	}
-	return `Browse ${amount} equal sums of ${power} powers (${category.left_count} vs ${category.right_count}), ${details}.`;
+	const condition = categoryCondition(category.id);
+	const restriction = condition ? ` with the ${condition.phrase}` : '';
+	return `Browse ${amount} equal sums of ${power} powers (${category.left_count} vs ${category.right_count})${restriction}, ${details}.`;
 }
 
 function validateUsername(username: string) {
@@ -625,7 +633,10 @@ export const actions: Actions = {
 		}
 
 		const category = await db
-			.prepare('SELECT id, exponent, left_count, right_count, format FROM categories WHERE id = ?')
+
+			.prepare(
+				'SELECT id, exponent, left_count, right_count, format, notation FROM categories WHERE id = ?'
+			)
 			.bind(categoryId)
 			.first<CategoryShape>();
 		if (!category)

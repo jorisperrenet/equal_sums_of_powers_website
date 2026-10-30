@@ -218,4 +218,23 @@ describe('parseAndVerify', () => {
 		const result = parseAndVerify('38+47+123=89+118+1', nearMissCategory);
 		expect(result.right.at(-1)).toBe(1n);
 	});
+
+	it('records only (6, 1, 7) solutions whose lone term is prime to 7', () => {
+		const restricted = {
+			id: '6-1-7-coprime-7',
+			exponent: 6,
+			left_count: 1,
+			right_count: 7,
+			notation: '(6, 1, 7; 7 ∤ a)'
+		};
+		const meyrignac = '1141 = 1077 + 894 + 702 + 474 + 402 + 234 + 74';
+		expect(parseAndVerify(meyrignac, { ...restricted, id: '6-1-7', notation: null }).maxTerm).toBe(
+			1141n
+		);
+		expect(() => parseAndVerify(meyrignac, restricted)).toThrow(/not divisible by 7.*7 · 163/);
+		expect(() => parseAndVerify(`(6, 1, 7; 7 ∤ a) ${meyrignac}`, restricted)).toThrow(
+			/not divisible by 7/
+		);
+		expect(() => parseAndVerify(`(6,1,7) ${meyrignac}`, restricted)).toThrow(/not divisible by 7/);
+	});
 });

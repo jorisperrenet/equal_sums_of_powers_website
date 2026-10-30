@@ -1,5 +1,6 @@
 import { TARGET_MAX, TARGET_MIN } from '$lib/target-range';
 import { MAX_TERM_DIGITS } from '$lib/terms';
+import { categoryCondition } from '$lib/category-conditions';
 
 export type CategoryShape = {
 	id: string;
@@ -7,6 +8,7 @@ export type CategoryShape = {
 	left_count: number;
 	right_count: number;
 	format?: 'equality' | 'target' | 'near_miss';
+	notation?: string | null;
 };
 
 export type ParsedEquation = {
@@ -170,7 +172,9 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 				: category.format === 'near_miss'
 					? `${category.exponent},${category.left_count},${category.right_count};±1`
 					: `${category.exponent},${category.left_count},${category.right_count}`;
-		if (supplied !== expected) {
+		// A category with a condition also accepts its full notation, e.g. (6, 1, 7; 7 ∤ a).
+		const conditioned = category.notation?.replace(/[()\s]/g, '').toUpperCase();
+		if (supplied !== expected && supplied !== conditioned) {
 			throw new Error('The category prefix does not match the selected category.');
 		}
 	}
@@ -304,6 +308,8 @@ export function parseAndVerify(rawInput: string, category: CategoryShape): Parse
 	) {
 		[normalizedLeft, normalizedRight] = [normalizedRight, normalizedLeft];
 	}
+	const conditionError = categoryCondition(category.id)?.check(normalizedLeft, normalizedRight);
+	if (conditionError) throw new Error(conditionError);
 	const max = largest([...left, ...right]);
 
 	return {

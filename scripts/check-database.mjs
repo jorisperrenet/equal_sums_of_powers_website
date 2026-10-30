@@ -248,6 +248,10 @@ for (const row of rows) {
 		}
 		leftSum = left.reduce((sum, value) => sum + value ** exponent, 0n);
 		rightSum = right.reduce((sum, value) => sum + value ** exponent, 0n);
+		// Category conditions of src/lib/category-conditions.ts (migration 0037).
+		if (row.category_id === '6-1-7-coprime-7' && left[0] % 7n === 0n) {
+			fail(row, 'lone term is divisible by 7');
+		}
 	} else {
 		fail(row, `has unknown category format ${row.format}`);
 		continue;
