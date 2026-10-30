@@ -494,12 +494,20 @@
 				<div class="mt-3 grid gap-x-8 gap-y-5 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
 					<div class="min-w-0 space-y-3 text-sm leading-6 text-[#333]">
 						<p>
-							This site collects known solutions of equations such as
-							<i>a</i><sup>6</sup> = <i>b</i><sub>1</sub><sup>6</sup> + … +
-							<i>b</i><sub>7</sub><sup>6</sup>: equal sums of like powers, together with near misses
-							(±1) and sums hitting a fixed integer target. Every identity is checked with exact
-							integer arithmetic before it is stored, and each is credited to its discoverer with
-							the date and the method used.
+							This site collects known solutions of equal sums of like powers,
+							<span class="whitespace-nowrap"
+								><i>a</i><sub>1</sub><sup><i>k</i></sup> + <i>a</i><sub>2</sub><sup><i>k</i></sup> +
+								… +
+								<i>a<sub>m</sub></i><sup><i>k</i></sup></span
+							>
+							=
+							<span class="whitespace-nowrap"
+								><i>b</i><sub>1</sub><sup><i>k</i></sup> + <i>b</i><sub>2</sub><sup><i>k</i></sup> +
+								… +
+								<i>b<sub>n</sub></i><sup><i>k</i></sup></span
+							>, together with near misses (±1) and sums hitting a fixed integer target. Every
+							identity is checked with exact integer arithmetic before it is stored, and each is
+							credited to its discoverer with the date and the method used.
 						</p>
 						<p>
 							Choose a power in the bar above to browse its categories; dashed chips marked
@@ -536,8 +544,9 @@
 							</li>
 							<li>
 								<span class="font-bold">Oct 2026.</span>
-								New open categories for 11th powers with 13 terms, 12th powers with 14–16 terms and 13th
-								powers with 16–18 terms.
+								New open categories (6,&nbsp;1,&nbsp;5), (6,&nbsp;2,&nbsp;5) and (6,&nbsp;3,&nbsp;4),
+								and for 11th powers with 13 terms, 12th powers with 14–16 terms and 13th powers with 16–18
+								terms.
 							</li>
 						</ul>
 					</div>
@@ -681,6 +690,11 @@
 										? 'highest term'
 										: 'discovery date'}.
 							</p>
+							{#if categoryCondition(data.selectedCategory)?.about}
+								<p class="mt-2 max-w-3xl text-sm leading-6 text-[#333]">
+									{categoryCondition(data.selectedCategory)?.about}
+								</p>
+							{/if}
 						</div>
 						<div class="flex items-center gap-3 text-sm">
 							<a
